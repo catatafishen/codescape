@@ -33,7 +33,14 @@ object StatsAggregator {
         SourceCategory.SOURCE -> true
     }
 
-    private class Accum(var total: Long = 0, var nonBlank: Long = 0, var code: Long = 0, var size: Long = 0, var count: Long = 0)
+    private class Accum(
+        var total: Long = 0,
+        var nonBlank: Long = 0,
+        var code: Long = 0,
+        var complexity: Long = 0,
+        var size: Long = 0,
+        var count: Long = 0
+    )
 
     private inline fun flatGroup(files: List<FileStat>, keyOf: (FileStat) -> String): List<StatGroup> {
         val byKey = HashMap<String, Accum>()
@@ -42,11 +49,12 @@ object StatsAggregator {
             acc.total += f.totalLines
             acc.nonBlank += f.nonBlankLines
             acc.code += f.codeLines
+            acc.complexity += f.complexity
             acc.size += f.sizeBytes
             acc.count += 1
         }
         return byKey.entries.map { (k, v) ->
-            StatGroup(k, v.total, v.nonBlank, v.code, v.size, v.count)
+            StatGroup(k, v.total, v.nonBlank, v.code, v.complexity, v.size, v.count)
         }.sortedByDescending { it.totalLines }
     }
 
@@ -61,6 +69,7 @@ object StatsAggregator {
             var total: Long = 0,
             var nonBlank: Long = 0,
             var code: Long = 0,
+            var complexity: Long = 0,
             var size: Long = 0,
             var count: Long = 0,
             var isFile: Boolean = false,
@@ -72,12 +81,14 @@ object StatsAggregator {
             val parts = f.relativePath.split('/').filter { it.isNotEmpty() }
             var node = root
             root.total += f.totalLines; root.nonBlank += f.nonBlankLines
-            root.code += f.codeLines; root.size += f.sizeBytes; root.count += 1
+            root.code += f.codeLines; root.complexity += f.complexity
+            root.size += f.sizeBytes; root.count += 1
             for ((idx, part) in parts.withIndex()) {
                 node = node.children.getOrPut(part) { Node(part) }
                 node.total += f.totalLines
                 node.nonBlank += f.nonBlankLines
                 node.code += f.codeLines
+                node.complexity += f.complexity
                 node.size += f.sizeBytes
                 node.count += 1
                 if (idx == parts.lastIndex) node.isFile = true
@@ -86,7 +97,7 @@ object StatsAggregator {
 
         fun convert(n: Node): StatGroup {
             val kids = n.children.values.map { convert(it) }.sortedByDescending { it.totalLines }
-            return StatGroup(n.name, n.total, n.nonBlank, n.code, n.size, n.count, kids)
+            return StatGroup(n.name, n.total, n.nonBlank, n.code, n.complexity, n.size, n.count, kids)
         }
         // Return the top-level children (under <project>); treemap presents them as roots.
         return convert(root).children

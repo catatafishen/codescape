@@ -25,23 +25,23 @@ replacement from the table below instead.
 
 ## Required replacements
 
-| If you want to …                      | Do NOT call         | Call instead                            |
-|---------------------------------------|---------------------|-----------------------------------------|
-| Read a file                           | `view`, `read`      | `agentbridge-read_file`                 |
-| Edit a small range in a file          | `edit`, `str_replace` | `agentbridge-edit_text`               |
-| Replace an entire method/class        | `edit`              | `agentbridge-replace_symbol_body`       |
-| Insert a new method near another      | `edit`              | `agentbridge-insert_before_symbol` / `…_after_symbol` |
-| Write a new file or overwrite         | `create`, `write`   | `agentbridge-write_file`                |
-| Run a shell command                   | `bash`, `execute`   | `agentbridge-run_command`               |
-| Run an interactive / TTY command      | `bash`              | `agentbridge-run_in_terminal`           |
-| Search text across files              | `grep`              | `agentbridge-search_text`               |
-| Find files by name / glob             | `glob`              | `agentbridge-list_project_files` or `agentbridge-glob` |
-| Find a class / method / field         | `grep`              | `agentbridge-search_symbols`            |
-| Find usages of a symbol               | `grep`              | `agentbridge-find_references`           |
-| List / inspect git state              | `bash git …`        | `agentbridge-git_status` / `_diff` / `_log` / `_blame` |
-| Stage / commit / push / branch        | `bash git …`        | `agentbridge-git_stage` / `_commit` / `_push` / `_branch` |
-| Delegate a sub-task to another agent  | `task`              | Do it yourself using the tools above    |
-| Announce what you are doing           | `report_intent`     | Omit — the IDE surfaces this via tool call names |
+| If you want to …                     | Do NOT call           | Call instead                                              |
+|--------------------------------------|-----------------------|-----------------------------------------------------------|
+| Read a file                          | `view`, `read`        | `agentbridge-read_file`                                   |
+| Edit a small range in a file         | `edit`, `str_replace` | `agentbridge-edit_text`                                   |
+| Replace an entire method/class       | `edit`                | `agentbridge-replace_symbol_body`                         |
+| Insert a new method near another     | `edit`                | `agentbridge-insert_before_symbol` / `…_after_symbol`     |
+| Write a new file or overwrite        | `create`, `write`     | `agentbridge-write_file`                                  |
+| Run a shell command                  | `bash`, `execute`     | `agentbridge-run_command`                                 |
+| Run an interactive / TTY command     | `bash`                | `agentbridge-run_in_terminal`                             |
+| Search text across files             | `grep`                | `agentbridge-search_text`                                 |
+| Find files by name / glob            | `glob`                | `agentbridge-list_project_files` or `agentbridge-glob`    |
+| Find a class / method / field        | `grep`                | `agentbridge-search_symbols`                              |
+| Find usages of a symbol              | `grep`                | `agentbridge-find_references`                             |
+| List / inspect git state             | `bash git …`          | `agentbridge-git_status` / `_diff` / `_log` / `_blame`    |
+| Stage / commit / push / branch       | `bash git …`          | `agentbridge-git_stage` / `_commit` / `_push` / `_branch` |
+| Delegate a sub-task to another agent | `task`                | Do it yourself using the tools above                      |
+| Announce what you are doing          | `report_intent`       | Omit — the IDE surfaces this via tool call names          |
 
 ### Allowed exceptions
 
@@ -97,7 +97,7 @@ the user — do not silently reach for it.
    a) Auto-highlights returned from a write — after EACH edit. Instant.
    b) `get_compilation_errors` — after editing multiple files.
    c) `build_project` — full incremental compilation. If "Build already in
-      progress", wait and retry.
+   progress", wait and retry.
 
 # SUB-AGENT TOOL GUIDANCE
 

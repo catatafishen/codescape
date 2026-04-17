@@ -24,6 +24,7 @@ object ProjectScanner {
         var totalLines = 0L
         var nonBlank = 0L
         var codeL = 0L
+        var complexityTotal = 0L
         var size = 0L
 
         val rootManager = ProjectRootManager.getInstance(project)
@@ -62,6 +63,7 @@ object ProjectScanner {
                     totalLines += stat.totalLines
                     nonBlank += stat.nonBlankLines
                     codeL += stat.codeLines
+                    complexityTotal += stat.complexity
                     size += stat.sizeBytes
                     return true
                 }
@@ -73,6 +75,7 @@ object ProjectScanner {
             totalLines = totalLines,
             nonBlankLines = nonBlank,
             codeLines = codeL,
+            complexity = complexityTotal,
             sizeBytes = size,
             fileCount = files.size.toLong(),
             scannedMillis = System.currentTimeMillis() - started,
@@ -103,6 +106,7 @@ object ProjectScanner {
                 totalLines = 0,
                 nonBlankLines = 0,
                 codeLines = 0,
+                complexity = 0,
                 sizeBytes = size,
             )
         }
@@ -112,6 +116,7 @@ object ProjectScanner {
         var total = 0
         var nonBlank = 0
         var codeL = 0
+        var complexity = 0
         if (!isBinary) {
             try {
                 val bytes = file.contentsToByteArray(false)
@@ -119,7 +124,9 @@ object ProjectScanner {
                 val text = String(bytes, charset)
                 val ext = file.extension?.lowercase() ?: ""
                 val style = COMMENT_STYLES[ext]
+                val keywords = DECISION_KEYWORDS[ext]
                 var inBlock = false
+                val codeBuffer = if (keywords != null) StringBuilder(128) else null
                 var lineStart = 0
                 var i = 0
                 while (i <= text.length) {
@@ -129,17 +136,37 @@ object ProjectScanner {
                         var hasContent = false
                         for (j in lineStart until lineEnd) {
                             val c = text[j]
-                            if (c != ' ' && c != '\t') { hasContent = true; break }
+                            if (c != ' ' && c != '\t') {
+                                hasContent = true; break
+                            }
                         }
                         if (hasContent) {
                             nonBlank++
                             if (style == null) {
                                 codeL++
+                                if (keywords != null) {
+                                    complexity += countKeywordsInRange(text, lineStart, lineEnd, keywords)
+                                }
                             } else {
-                                val (hasCode, newInBlock) = classifyLine(text, lineStart, lineEnd, inBlock, style)
+                                codeBuffer?.setLength(0)
+                                val (hasCode, newInBlock) = classifyLine(
+                                    text,
+                                    lineStart,
+                                    lineEnd,
+                                    inBlock,
+                                    style,
+                                    codeBuffer
+                                )
                                 inBlock = newInBlock
-                                if (hasCode) codeL++
+                                if (hasCode) {
+                                    codeL++
+                                    if (codeBuffer != null && keywords != null) {
+                                        complexity += countKeywordsInBuffer(codeBuffer, keywords)
+                                    }
+                                }
                             }
+                        } else if (style != null && inBlock) {
+                            // Blank line inside a block comment — no code content but block state is unchanged.
                         }
                         lineStart = i + 1
                     }
@@ -160,6 +187,7 @@ object ProjectScanner {
             totalLines = total,
             nonBlankLines = nonBlank,
             codeLines = codeL,
+            complexity = complexity,
             sizeBytes = size,
         )
     }
@@ -187,7 +215,11 @@ object ProjectScanner {
         // Generated sources: ask the platform extension point. Use the project from module if available.
         val module = idx.getModuleForFile(file)
         if (module != null) {
-            if (GeneratedSourcesFilter.isGeneratedSourceByAnyFilter(file, module.project)) return SourceCategory.GENERATED
+            if (GeneratedSourcesFilter.isGeneratedSourceByAnyFilter(
+                    file,
+                    module.project
+                )
+            ) return SourceCategory.GENERATED
         }
         val rootType: JpsModuleSourceRootType<*>? = idx.getContainingSourceRootType(file)
         return when (rootType) {
@@ -205,6 +237,7 @@ object ProjectScanner {
                     else -> SourceCategory.OTHER
                 }
             }
+
             else -> SourceCategory.SOURCE
         }
     }
@@ -219,67 +252,68 @@ object ProjectScanner {
 
     private val COMMENT_STYLES = mapOf(
         // JVM / Kotlin / Groovy / Scala
-        "java"   to CommentStyle("//", "/*", "*/"),
-        "kt"     to CommentStyle("//", "/*", "*/"),
-        "kts"    to CommentStyle("//", "/*", "*/"),
+        "java" to CommentStyle("//", "/*", "*/"),
+        "kt" to CommentStyle("//", "/*", "*/"),
+        "kts" to CommentStyle("//", "/*", "*/"),
         "groovy" to CommentStyle("//", "/*", "*/"),
         "gradle" to CommentStyle("//", "/*", "*/"),
-        "scala"  to CommentStyle("//", "/*", "*/"),
-        "clj"    to CommentStyle(";"),
+        "scala" to CommentStyle("//", "/*", "*/"),
+        "clj" to CommentStyle(";"),
         // C / C++ / Objective-C
-        "c"   to CommentStyle("//", "/*", "*/"),
-        "h"   to CommentStyle("//", "/*", "*/"),
+        "c" to CommentStyle("//", "/*", "*/"),
+        "h" to CommentStyle("//", "/*", "*/"),
         "cpp" to CommentStyle("//", "/*", "*/"),
-        "cc"  to CommentStyle("//", "/*", "*/"),
+        "cc" to CommentStyle("//", "/*", "*/"),
         "cxx" to CommentStyle("//", "/*", "*/"),
         "hpp" to CommentStyle("//", "/*", "*/"),
-        "m"   to CommentStyle("//", "/*", "*/"),
+        "m" to CommentStyle("//", "/*", "*/"),
         // Web / scripting
-        "js"   to CommentStyle("//", "/*", "*/"),
-        "jsx"  to CommentStyle("//", "/*", "*/"),
-        "ts"   to CommentStyle("//", "/*", "*/"),
-        "tsx"  to CommentStyle("//", "/*", "*/"),
-        "mjs"  to CommentStyle("//", "/*", "*/"),
-        "css"  to CommentStyle(null, "/*", "*/"),
+        "js" to CommentStyle("//", "/*", "*/"),
+        "jsx" to CommentStyle("//", "/*", "*/"),
+        "ts" to CommentStyle("//", "/*", "*/"),
+        "tsx" to CommentStyle("//", "/*", "*/"),
+        "mjs" to CommentStyle("//", "/*", "*/"),
+        "css" to CommentStyle(null, "/*", "*/"),
         "scss" to CommentStyle("//", "/*", "*/"),
         "less" to CommentStyle("//", "/*", "*/"),
         // Systems languages
-        "go"    to CommentStyle("//", "/*", "*/"),
-        "rs"    to CommentStyle("//", "/*", "*/"),
+        "go" to CommentStyle("//", "/*", "*/"),
+        "rs" to CommentStyle("//", "/*", "*/"),
         "swift" to CommentStyle("//", "/*", "*/"),
-        "cs"    to CommentStyle("//", "/*", "*/"),
-        "dart"  to CommentStyle("//", "/*", "*/"),
-        "php"   to CommentStyle("//", "/*", "*/"),
+        "cs" to CommentStyle("//", "/*", "*/"),
+        "dart" to CommentStyle("//", "/*", "*/"),
+        "php" to CommentStyle("//", "/*", "*/"),
         // Scripting / data
-        "py"   to CommentStyle("#"),
-        "rb"   to CommentStyle("#"),
-        "sh"   to CommentStyle("#"),
+        "py" to CommentStyle("#"),
+        "rb" to CommentStyle("#"),
+        "sh" to CommentStyle("#"),
         "bash" to CommentStyle("#"),
-        "zsh"  to CommentStyle("#"),
+        "zsh" to CommentStyle("#"),
         "fish" to CommentStyle("#"),
         "yaml" to CommentStyle("#"),
-        "yml"  to CommentStyle("#"),
+        "yml" to CommentStyle("#"),
         "toml" to CommentStyle("#"),
-        "r"    to CommentStyle("#"),
-        "pl"   to CommentStyle("#"),
-        "pm"   to CommentStyle("#"),
-        "tf"   to CommentStyle("#", "/*", "*/"),
+        "r" to CommentStyle("#"),
+        "pl" to CommentStyle("#"),
+        "pm" to CommentStyle("#"),
+        "tf" to CommentStyle("#", "/*", "*/"),
         // SQL / functional
         "sql" to CommentStyle("--", "/*", "*/"),
-        "hs"  to CommentStyle("--", "{-", "-}"),
+        "hs" to CommentStyle("--", "{-", "-}"),
         "lua" to CommentStyle("--", "--[[", "]]"),
         // Markup
-        "html"  to CommentStyle(null, "<!--", "-->"),
-        "htm"   to CommentStyle(null, "<!--", "-->"),
-        "xml"   to CommentStyle(null, "<!--", "-->"),
+        "html" to CommentStyle(null, "<!--", "-->"),
+        "htm" to CommentStyle(null, "<!--", "-->"),
+        "xml" to CommentStyle(null, "<!--", "-->"),
         "xhtml" to CommentStyle(null, "<!--", "-->"),
-        "svg"   to CommentStyle(null, "<!--", "-->"),
+        "svg" to CommentStyle(null, "<!--", "-->"),
     )
 
     /**
      * Scans one line of [text] from [lineStart] to [lineEnd] (exclusive) respecting comment syntax.
      * Returns whether the line contains any non-comment, non-whitespace code character
      * and the updated block-comment state after the line.
+     * If [codeBuffer] is non-null, code characters are appended to it (for keyword counting).
      */
     private fun classifyLine(
         text: String,
@@ -287,6 +321,7 @@ object ProjectScanner {
         lineEnd: Int,
         inBlockIn: Boolean,
         style: CommentStyle,
+        codeBuffer: StringBuilder? = null,
     ): Pair<Boolean, Boolean> {
         var hasCode = false
         var inBlock = inBlockIn
@@ -304,16 +339,94 @@ object ProjectScanner {
                 val bo = style.blockOpen
                 val lc = style.line
                 when {
-                    bo != null && text.startsWith(bo, j) -> { inBlock = true; j += bo.length }
+                    bo != null && text.startsWith(bo, j) -> {
+                        inBlock = true; j += bo.length
+                    }
+
                     lc != null && text.startsWith(lc, j) -> break // rest of line is comment
                     else -> {
                         val c = text[j]
                         if (c != ' ' && c != '\t') hasCode = true
+                        codeBuffer?.append(c)
                         j++
                     }
                 }
             }
         }
         return Pair(hasCode, inBlock)
+    }
+
+    // ---- Cyclomatic complexity (decision-point counting) ----
+
+    /** Decision keywords per extension. */
+    private val DECISION_KEYWORDS: Map<String, Array<String>> = mapOf(
+        // JVM / Kotlin / Groovy / Scala
+        "java" to arrayOf("if", "for", "while", "do", "case", "catch"),
+        "kt" to arrayOf("if", "for", "while", "do", "when", "catch"),
+        "kts" to arrayOf("if", "for", "while", "do", "when", "catch"),
+        "groovy" to arrayOf("if", "for", "while", "do", "case", "catch"),
+        "gradle" to arrayOf("if", "for", "while", "do", "case", "catch"),
+        "scala" to arrayOf("if", "for", "while", "do", "case", "catch", "match"),
+        // C / C++ / Objective-C
+        "c" to arrayOf("if", "for", "while", "do", "case", "catch"),
+        "h" to arrayOf("if", "for", "while", "do", "case", "catch"),
+        "cpp" to arrayOf("if", "for", "while", "do", "case", "catch"),
+        "cc" to arrayOf("if", "for", "while", "do", "case", "catch"),
+        "cxx" to arrayOf("if", "for", "while", "do", "case", "catch"),
+        "hpp" to arrayOf("if", "for", "while", "do", "case", "catch"),
+        "m" to arrayOf("if", "for", "while", "do", "case", "catch"),
+        // Web / scripting
+        "js" to arrayOf("if", "for", "while", "do", "case", "catch"),
+        "jsx" to arrayOf("if", "for", "while", "do", "case", "catch"),
+        "ts" to arrayOf("if", "for", "while", "do", "case", "catch"),
+        "tsx" to arrayOf("if", "for", "while", "do", "case", "catch"),
+        "mjs" to arrayOf("if", "for", "while", "do", "case", "catch"),
+        // Systems
+        "go" to arrayOf("if", "for", "switch", "case", "select"),
+        "rs" to arrayOf("if", "for", "while", "loop", "match"),
+        "swift" to arrayOf("if", "for", "while", "do", "case", "catch", "guard"),
+        "cs" to arrayOf("if", "for", "foreach", "while", "do", "case", "catch"),
+        "dart" to arrayOf("if", "for", "while", "do", "case", "catch"),
+        "php" to arrayOf("if", "for", "foreach", "while", "do", "case", "catch"),
+        // Scripting / data
+        "py" to arrayOf("if", "elif", "for", "while", "except"),
+        "rb" to arrayOf("if", "elsif", "unless", "for", "while", "rescue", "until"),
+        "sh" to arrayOf("if", "elif", "for", "while", "case"),
+        "bash" to arrayOf("if", "elif", "for", "while", "case"),
+        "zsh" to arrayOf("if", "elif", "for", "while", "case"),
+        // SQL / functional
+        "sql" to arrayOf("case", "when", "if"),
+        "lua" to arrayOf("if", "elseif", "for", "while", "repeat"),
+        "r" to arrayOf("if", "for", "while"),
+        "pl" to arrayOf("if", "elsif", "for", "foreach", "while", "unless", "until"),
+        "pm" to arrayOf("if", "elsif", "for", "foreach", "while", "unless", "until"),
+    )
+
+    /**
+     * Count occurrences of [keywords] in [text] between [start] and [end] (exclusive),
+     * respecting word boundaries (letter/digit/_ is not allowed adjacent to the keyword).
+     */
+    private fun countKeywordsInRange(text: String, start: Int, end: Int, keywords: Array<String>): Int {
+        var count = 0
+        for (kw in keywords) {
+            var pos = start
+            while (pos < end) {
+                val idx = text.indexOf(kw, pos)
+                if (idx == -1 || idx >= end) break
+                val before = if (idx > 0) text[idx - 1] else ' '
+                val after = if (idx + kw.length < text.length) text[idx + kw.length] else ' '
+                if (!before.isLetterOrDigit() && before != '_' &&
+                    !after.isLetterOrDigit() && after != '_'
+                ) count++
+                pos = idx + 1
+            }
+        }
+        return count
+    }
+
+    /** Count keyword occurrences in a [StringBuilder] (code content collected by classifyLine). */
+    private fun countKeywordsInBuffer(buf: StringBuilder, keywords: Array<String>): Int {
+        val s = buf.toString()
+        return countKeywordsInRange(s, 0, s.length, keywords)
     }
 }

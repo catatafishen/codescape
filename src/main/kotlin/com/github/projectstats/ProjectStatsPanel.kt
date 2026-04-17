@@ -183,6 +183,7 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
             append("Total LOC: %,d | ".format(result.totalLines))
             append("Non-blank: %,d | ".format(result.nonBlankLines))
             append("Code LOC: %,d | ".format(result.codeLines))
+            append("Complexity: %,d | ".format(result.complexity))
             append("Size: ${humanBytes(result.sizeBytes)} | ")
             append("Scan: ${result.scannedMillis} ms | ")
             append("Shown (${metric.display}): ${format(metric, totalMetric)}")
@@ -216,23 +217,24 @@ private class StatsTableModel : AbstractTableModel() {
     }
 
     override fun getRowCount(): Int = rows.size
-    override fun getColumnCount(): Int = 8
+    override fun getColumnCount(): Int = 9
     override fun getColumnName(column: Int): String = when (column) {
         0 -> "Name"
         1 -> "Files"
         2 -> "LOC"
         3 -> "Non-blank"
         4 -> "Code LOC"
-        5 -> "Size"
-        6 -> "% of ${metric.display}"
-        7 -> "Children"
+        5 -> "Complexity"
+        6 -> "Size"
+        7 -> "% of ${metric.display}"
+        8 -> "Children"
         else -> ""
     }
 
     override fun getColumnClass(columnIndex: Int): Class<*> = when (columnIndex) {
-        1, 2, 3, 4, 7 -> java.lang.Long::class.java
-        5 -> java.lang.Long::class.java
-        6 -> java.lang.Double::class.java
+        1, 2, 3, 4, 5, 8 -> java.lang.Long::class.java
+        6 -> java.lang.Long::class.java
+        7 -> java.lang.Double::class.java
         else -> String::class.java
     }
 
@@ -244,9 +246,10 @@ private class StatsTableModel : AbstractTableModel() {
             2 -> r.totalLines
             3 -> r.nonBlankLines
             4 -> r.codeLines
-            5 -> r.sizeBytes
-            6 -> if (total > 0) 100.0 * r.value(metric) / total else 0.0
-            7 -> r.children.size.toLong()
+            5 -> r.complexity
+            6 -> r.sizeBytes
+            7 -> if (total > 0) 100.0 * r.value(metric) / total else 0.0
+            8 -> r.children.size.toLong()
             else -> ""
         }
     }

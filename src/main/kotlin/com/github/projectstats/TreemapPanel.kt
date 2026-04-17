@@ -35,7 +35,9 @@ class TreemapPanel : JPanel() {
                     repaint()
                 } else if (e.button == MouseEvent.BUTTON3 || (e.clickCount == 2 && hit.children.isEmpty())) {
                     // right-click or double-click on a leaf goes back a level
-                    if (drillStack.isNotEmpty()) { drillStack.removeLast(); repaint() }
+                    if (drillStack.isNotEmpty()) {
+                        drillStack.removeLast(); repaint()
+                    }
                 }
             }
         })
@@ -144,7 +146,9 @@ class TreemapPanel : JPanel() {
             while (idx < remaining.size) {
                 val candidate = remaining[idx]
                 val cVal = candidate.value(metric).toDouble()
-                if (cVal <= 0) { idx++; continue }
+                if (cVal <= 0) {
+                    idx++; continue
+                }
                 val newSum = rowSum + cVal
                 val ratio = worstRatio(row + candidate, newSum, shorter, rect, remainingTotal)
                 if (row.isEmpty() || ratio <= bestRatio) {
@@ -165,7 +169,13 @@ class TreemapPanel : JPanel() {
         }
     }
 
-    private fun worstRatio(row: List<StatGroup>, sum: Double, shorter: Double, rect: Rectangle2D.Double, total: Double): Double {
+    private fun worstRatio(
+        row: List<StatGroup>,
+        sum: Double,
+        shorter: Double,
+        rect: Rectangle2D.Double,
+        total: Double
+    ): Double {
         if (sum <= 0.0 || total <= 0.0) return Double.MAX_VALUE
         val area = rect.width * rect.height * (sum / total)
         val side = area / shorter
@@ -233,12 +243,15 @@ fun humanBytes(b: Long): String {
     val units = arrayOf("KB", "MB", "GB", "TB")
     var v = b.toDouble() / 1024
     var i = 0
-    while (v >= 1024 && i < units.lastIndex) { v /= 1024; i++ }
+    while (v >= 1024 && i < units.lastIndex) {
+        v /= 1024; i++
+    }
     return "%.1f %s".format(v, units[i])
 }
 
 fun format(metric: Metric, value: Long): String = when (metric) {
     Metric.SIZE -> humanBytes(value)
     Metric.LOC, Metric.NON_BLANK_LOC, Metric.CODE_LOC -> "%,d lines".format(value)
+    Metric.COMPLEXITY -> "%,d".format(value)
     Metric.FILE_COUNT -> "%,d files".format(value)
 }
