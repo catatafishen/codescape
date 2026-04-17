@@ -19,6 +19,7 @@ dependencies {
         intellijIdeaCommunity("2024.2.3")
         bundledPlugin("com.intellij.java")
         instrumentationTools()
+        pluginVerifier()
     }
 }
 
@@ -40,7 +41,9 @@ intellijPlatform {
     }
     pluginVerification {
         ides {
-            recommended()
+            // Pin to a known-released IDE to avoid flaky `recommended()` picking
+            // versions whose tarballs are not yet published to the download mirror.
+            ide(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdeaCommunity, "2024.2.3")
         }
     }
     buildSearchableOptions = false
