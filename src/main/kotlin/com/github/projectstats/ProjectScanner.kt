@@ -33,6 +33,7 @@ object ProjectScanner {
         roots.addAll(rootManager.contentRoots)
         if (projectBase != null) roots.add(projectBase)
 
+        val seenPaths = HashSet<String>(4096)
         var visited = 0
         for (root in roots) {
             indicator?.checkCanceled()
@@ -48,6 +49,7 @@ object ProjectScanner {
                         ) return false
                         return true
                     }
+                    if (!seenPaths.add(file.path)) return true
                     visited++
                     if (visited % 200 == 0) {
                         indicator?.text2 = "Scanning ${file.presentableUrl}"

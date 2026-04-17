@@ -1,14 +1,26 @@
-# Inline Review Panel + Non-Blocking Gating
+# Project Stats IntelliJ Plugin
 
-## Problem
-- Review panel is only available when a git tool prompts it (hidden tab auto-adds/removes).
-- `awaitReviewCompletion` blocks 5min — MCP client times out before the useful error reaches the agent.
-- User wants: review panel on left of chat, collapsible, always openable; clearer gated-git message.
+## Goal
+Plugin that visualizes where a project's source code "size" comes from. Show LOC distribution by language, module, source category (source/test/resources/generated), and directory tree — similar to GitHub's repo language bar, but richer.
 
 ## Approach
-1. Wrap tool-window content in `OnePixelSplitter` (horizontal). Left=`ReviewChangesPanel`, right=connect/chat card layout. Default collapsed (0.0). Draggable, double-click to collapse.
-2. Title-bar toggle action expands/collapses the splitter.
-3. `ReviewChangesPanel` subscribes to `ReviewSessionTopic` itself via Disposer (owns its refresh).
-4. Replace `awaitReviewCompletion` blocking wait with immediate return: `checkReviewPending(op)` returns "Error: Review pending (N unreviewed changes for M files) — ..." or null. Notification fires only on transition.
-5. Delete `ReviewTabManager` (tab no longer needed). Move expand-on-block into `ChatToolWindowContent` via project-service hook.
-6. Update tests (ReviewGatingFutureTest → rename/rewrite for immediate-return semantics).
+- Kotlin plugin, IntelliJ Platform Gradle Plugin 2.x, target 2024.2+.
+- Tool window "Project Stats" on the right.
+- Scanner (background task) walks `ProjectRootManager.contentSourceRoots` + project base dir, classifies each file by:
+  - Module (ProjectFileIndex.getModuleForFile)
+  - Language/extension (FileType)
+  - Source category: SOURCE / TEST / RESOURCES / TEST_RESOURCES / GENERATED / OTHER (JavaSourceRootType, JavaResourceRootType, isInGeneratedSources, isExcluded)
+  - Directory relative path
+- LOC: total lines and non-blank lines (read via VFS, skip binaries & files > size cap).
+- UI:
+  - Top toolbar: Refresh, Group-by selector (Language | Module | Category | Directory), Metric selector (LOC | Non-blank LOC | File size | File count), include tests/generated toggles.
+  - Middle: squarified treemap (custom JPanel) with colored rectangles, tooltips, double-click to drill down (dirs).
+  - Right/bottom: GitHub-style stacked bar + sortable table with totals and percentages.
+
+## Todos
+- scaffold gradle + plugin.xml
+- implement scanner + model
+- implement treemap component
+- implement bar + table + toolbar
+- wire tool window factory + actions
+- build and verify
