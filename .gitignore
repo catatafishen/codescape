@@ -5,5 +5,10 @@ build/
 .idea/workspace.xml
 .idea/usage.statistics.xml
 .idea/tasks.xml
+.idea/mcpServer.xml
+.agent-work/
+.agentbridge/
+.copilot/
+out/
 *.iml
 !project-stats.iml

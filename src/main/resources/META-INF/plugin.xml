@@ -1,13 +1,22 @@
 <idea-plugin>
     <id>com.github.projectstats</id>
     <name>Project Stats</name>
-    <vendor>project-stats</vendor>
+    <vendor url="https://github.com/catatafishen/project-stats">catatafishen</vendor>
     <description><![CDATA[
         Visualize where your project's source code size comes from.<br/>
-        Breaks down lines of code by <b>language</b>, <b>module</b>, <b>source category</b>
+        Breaks down lines of code, code-only LOC and cyclomatic complexity by
+        <b>language</b>, <b>module</b>, <b>source category</b>
         (source/test/resources/generated), or <b>directory tree</b> with a treemap,
-        GitHub-style stacked bar, and sortable table.
+        GitHub-style stacked bar, and sortable table. Drill into directories with
+        double-click — empty single-child folder chains collapse automatically.<br/>
+        Cyclomatic complexity uses IntelliJ PSI for every language with a PSI tree
+        (Java, Kotlin, Groovy, Python, JS/TS, PHP, Go, Ruby, Rust, Scala, Dart, …)
+        and falls back to keyword counting for plain-text files.
     ]]></description>
+
+    <change-notes><![CDATA[
+        Initial release.
+    ]]></change-notes>
 
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.java</depends>

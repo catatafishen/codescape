@@ -1,0 +1,197 @@
+name: Publish to JetBrains Marketplace
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish (leave empty for latest release)'
+        required: false
+        type: string
+        default: ''
+      channel:
+        description: 'Marketplace channel'
+        required: true
+        type: choice
+        options:
+          - stable
+          - eap
+          - beta
+        default: stable
+
+permissions: read-all
+
+jobs:
+  resolve-tag:
+    name: Resolve release tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2.17.0
+        with:
+          egress-policy: audit
+
+      - name: Resolve tag from input or latest release
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [ -n "$INPUT_TAG" ]; then
+            echo "Using provided tag: $INPUT_TAG"
+            echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
+          else
+            LATEST=$(gh release list --repo "${{ github.repository }}" --limit 5 \
+              --json tagName,isPrerelease,isDraft \
+              --jq '[.[] | select(.isPrerelease == false and .isDraft == false)][0].tagName')
+            if [ -z "$LATEST" ]; then
+              echo "::error::No releases found. Specify a tag manually."
+              exit 1
+            fi
+            echo "Using latest release: $LATEST"
+            echo "tag=$LATEST" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: List recent releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "### 🏷️ Recent releases" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Tag | Date | Title |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-----|------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          gh release list --repo "${{ github.repository }}" --limit 10 \
+            --json tagName,publishedAt,name \
+            --jq '.[] | "| \(.tagName) | \(.publishedAt | split("T")[0]) | \(.name) |"' \
+            >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Selected:** \`${{ steps.resolve.outputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+  preview:
+    name: Preview changelog for ${{ needs.resolve-tag.outputs.tag }}
+    needs: resolve-tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2.17.0
+        with:
+          egress-policy: audit
+
+      - name: Download plugin ZIP from GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
+        run: |
+          gh release download "$RELEASE_TAG" \
+            --repo "${{ github.repository }}" \
+            --pattern "project-stats-*.zip" \
+            --dir release-artifacts
+          ls -la release-artifacts/
+
+      - name: Extract and display changelog
+        env:
+          RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          PLUGIN_ZIP=$(ls release-artifacts/project-stats-*.zip | head -1)
+          echo "Plugin ZIP: $PLUGIN_ZIP"
+
+          rm -rf /tmp/plugin-extract
+          unzip -o -q "$PLUGIN_ZIP" '*.jar' -d /tmp/plugin-extract
+          PLUGIN_JAR=$(find /tmp/plugin-extract -name '*.jar' -exec \
+            sh -c 'unzip -l "$1" META-INF/plugin.xml >/dev/null 2>&1 && echo "$1"' _ {} \; \
+            | head -1)
+          echo "Plugin JAR: ${PLUGIN_JAR:-<not found>}"
+
+          CHANGE_NOTES=""
+          if [ -n "$PLUGIN_JAR" ]; then
+            CHANGE_NOTES=$(unzip -p "$PLUGIN_JAR" META-INF/plugin.xml \
+              | sed -n '/<change-notes>/,/<\/change-notes>/p' \
+              | sed 's/<change-notes><!\[CDATA\[//;s/\]\]><\/change-notes>//' \
+              | sed '/^$/d')
+          fi
+
+          echo "### 📋 Changelog for $RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$CHANGE_NOTES" ]; then
+            echo "$CHANGE_NOTES" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "_Could not extract changelog._" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "---" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Channel:** \`$CHANNEL\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "> ✅ Approve the **marketplace** environment to publish." >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: Upload ${{ needs.resolve-tag.outputs.tag }} to JetBrains Marketplace
+    needs: [ resolve-tag, preview ]
+    runs-on: ubuntu-latest
+    environment: marketplace
+    permissions:
+      contents: write
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2.17.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Download plugin ZIP from GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
+        run: |
+          gh release download "$RELEASE_TAG" \
+            --repo "${{ github.repository }}" \
+            --pattern "project-stats-*.zip" \
+            --dir release-artifacts
+          ls -la release-artifacts/
+
+      - name: Upload to JetBrains Marketplace
+        env:
+          JETBRAINS_TOKEN: ${{ secrets.JETBRAINS_MARKETPLACE_TOKEN }}
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          PLUGIN_ZIP=$(ls release-artifacts/project-stats-*.zip | head -1)
+          echo "Uploading: $PLUGIN_ZIP to channel '${CHANNEL}'"
+
+          CURL_ARGS=(
+            --header "Authorization: Bearer $JETBRAINS_TOKEN"
+            -F "xmlId=com.github.projectstats"
+            -F "file=@$PLUGIN_ZIP"
+          )
+          if [ "$CHANNEL" != "stable" ]; then
+            CURL_ARGS+=(-F "channel=$CHANNEL")
+          fi
+
+          HTTP_STATUS=$(curl -s -o response.txt -w "%{http_code}" "${CURL_ARGS[@]}" \
+            https://plugins.jetbrains.com/plugin/uploadPlugin)
+
+          echo "--- Marketplace response ---"
+          cat response.txt
+          echo ""
+
+          if [ "$HTTP_STATUS" != "200" ] && [ "$HTTP_STATUS" != "201" ]; then
+            echo "Upload failed with HTTP status $HTTP_STATUS"
+            exit 1
+          fi
+          echo "Successfully published $PLUGIN_ZIP to the JetBrains Marketplace"
+
+      - name: Update marketplace-latest tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
+        run: |
+          gh auth setup-git
+          TARGET_SHA=$(git rev-list -n1 "$RELEASE_TAG")
+          git tag -f marketplace-latest "$TARGET_SHA"
+          git push origin marketplace-latest --force
+          echo "Updated marketplace-latest → $TARGET_SHA ($RELEASE_TAG)"

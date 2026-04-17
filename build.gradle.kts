@@ -4,7 +4,8 @@ plugins {
 }
 
 group = "com.github.projectstats"
-version = "0.1.0"
+// Version is set by CI (PLUGIN_VERSION env var) for releases; defaults to a snapshot for local dev.
+version = (System.getenv("PLUGIN_VERSION")?.takeIf { it.isNotBlank() }) ?: "0.0.0-SNAPSHOT"
 
 repositories {
     mavenCentral()
@@ -31,8 +32,22 @@ intellijPlatform {
             sinceBuild = "242"
             untilBuild = "261.*"
         }
+        // Allow CI to inject release notes (HTML) into the plugin's <change-notes>.
+        System.getenv("CHANGELOG_FILE")?.takeIf { it.isNotBlank() }?.let { path ->
+            val f = file(path)
+            if (f.exists()) changeNotes = providers.provider { f.readText() }
+        }
+    }
+    pluginVerification {
+        ides {
+            recommended()
+        }
     }
     buildSearchableOptions = false
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 tasks {
