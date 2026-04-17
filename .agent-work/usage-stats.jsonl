@@ -3,3 +3,4 @@
 {"timestamp":"2026-04-17T10:44:42.577224264Z","prompt":"I tested it, here it works fine, but in another project I notice it shows 3x line counts for files, which is strange and I don't know what could cause it. To mee, this loop `ProjectScanner.kt:116-128`","model":"claude-sonnet-4.6","multiplier":"1x","toolCalls":6}
 {"timestamp":"2026-04-17T11:41:01.159632931Z","prompt":"Thanks, works beter now! We have the non-blank loc. But I'd also want to exclude comments","model":"claude-sonnet-4.6","multiplier":"1x","toolCalls":27}
 {"timestamp":"2026-04-17T11:49:59.299468007Z","prompt":"Perfect! Can we add a count of cyclomatic complecity per file as well?","model":"claude-sonnet-4.6","multiplier":"1x","toolCalls":20}
+{"timestamp":"2026-04-17T12:04:25.939224989Z","prompt":"Thanks, can you check if we can use AST/PSI provided from the IDE? If not, this is also an acceptable solution","model":"claude-sonnet-4.6","multiplier":"1x","toolCalls":100}
