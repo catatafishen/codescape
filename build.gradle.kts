@@ -17,8 +17,6 @@ dependencies {
     intellijPlatform {
         intellijIdeaCommunity("2024.2.3")
         bundledPlugin("com.intellij.java")
-        bundledPlugin("org.jetbrains.kotlin")
-        bundledPlugin("org.intellij.groovy")
         instrumentationTools()
     }
 }

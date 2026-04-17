@@ -1,129 +1,116 @@
 package com.github.projectstats
 
+import com.intellij.openapi.fileTypes.PlainTextLanguage
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiJavaFile
 import com.intellij.psi.PsiManager
+import com.intellij.psi.PsiRecursiveElementVisitor
 import com.siyeh.ig.classmetrics.CyclomaticComplexityVisitor
-import org.jetbrains.plugins.groovy.lang.psi.GroovyFile
-import org.jetbrains.plugins.groovy.lang.psi.GroovyRecursiveElementVisitor
-import org.jetbrains.plugins.groovy.lang.psi.api.GrDoWhileStatement
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrForStatement
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrIfStatement
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrSwitchStatement
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrWhileStatement
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrConditionalExpression
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrSwitchExpression
-import org.jetbrains.kotlin.psi.KtCatchClause
-import org.jetbrains.kotlin.psi.KtDoWhileExpression
-import org.jetbrains.kotlin.psi.KtFile
-import org.jetbrains.kotlin.psi.KtForExpression
-import org.jetbrains.kotlin.psi.KtIfExpression
-import org.jetbrains.kotlin.psi.KtTreeVisitorVoid
-import org.jetbrains.kotlin.psi.KtWhenExpression
-import org.jetbrains.kotlin.psi.KtWhileExpression
 
 /**
- * Uses IntelliJ PSI for accurate cyclomatic complexity on Java, Kotlin, and Groovy files.
- * Returns null for unsupported file types, signalling the caller to fall back to keyword counting.
+ * Uses IntelliJ PSI for cyclomatic complexity on any language JetBrains provides a PSI tree for.
+ *
+ *  - Java: precise visitor (counts if/for/while/switch/catch/ternary/&&/|| — includes short-circuit operators)
+ *  - Everything else with a PSI tree (Kotlin, Groovy, Python, JS/TS, PHP, Go, Ruby, Rust, Scala, Dart…):
+ *    heuristic visitor that recognizes branching nodes by PSI class simple name.
+ *    Operators (&&/||) are NOT counted for these languages since that would require language-specific
+ *    AST knowledge, but all control-flow structures (if/for/while/switch cases/catch/ternary) are.
+ *
+ *  Returns null only for files with no PSI tree or plain-text/binary content, signalling the caller
+ *  to fall back to keyword counting.
  */
 object PsiComplexityCalculator {
     fun calculate(file: VirtualFile, project: Project): Int? {
         val psiFile = PsiManager.getInstance(project).findFile(file) ?: return null
+        // Plain text / unknown files have no real PSI tree — let the keyword fallback handle them.
+        if (psiFile.language == PlainTextLanguage.INSTANCE) return null
         return when (psiFile) {
             is PsiJavaFile -> {
                 val visitor = CyclomaticComplexityVisitor()
                 psiFile.accept(visitor)
                 visitor.complexity
             }
-            is KtFile -> {
-                val visitor = KotlinComplexityVisitor()
+            else -> {
+                val visitor = GenericPsiComplexityVisitor()
                 psiFile.accept(visitor)
                 visitor.complexity
             }
-            is GroovyFile -> {
-                val visitor = GroovyComplexityVisitor()
-                psiFile.accept(visitor)
-                visitor.complexity
-            }
-            else -> null
         }
     }
 }
 
-private class KotlinComplexityVisitor : KtTreeVisitorVoid() {
+/**
+ * Recognizes decision-point PSI nodes across every JetBrains language by their class simple name.
+ *
+ * Matched classes per language family:
+ *  - Kotlin:   KtIfExpression, KtForExpression, KtWhileExpression, KtDoWhileExpression,
+ *              KtWhenEntry, KtCatchClause
+ *  - Groovy:   GrIfStatement, GrForStatement, GrWhileStatement, GrDoWhileStatement,
+ *              GrCaseSection, GrConditionalExpression
+ *  - Python:   PyIfStatement, PyForStatement, PyWhileStatement, PyConditionalExpression, PyExceptPart
+ *  - JS/TS:    JSIfStatement, JSForStatement, JSForInStatement, JSForOfStatement,
+ *              JSWhileStatement, JSDoWhileStatement, JSCaseClause, JSConditionalExpression, JSCatchBlock
+ *  - PHP:      PhpIfStatement, PhpForStatement, PhpForeachStatement, PhpWhileStatement,
+ *              PhpDoWhileStatement, PhpCaseList, PhpCatch (TernaryExpression also matched)
+ *  - Go:       GoIfStatement, GoForStatement, GoCaseClause, GoTypeCaseClause
+ *  - Ruby:     RIfStatement, RForStatement, RWhileStatement, RUntilStatement,
+ *              RWhenEntry, RRescueClause, RTernaryExpression
+ *  - Rust:     RsIfExpr, RsForExpr, RsWhileExpr, RsLoopExpr, RsMatchArm
+ *  - Scala:    ScIfStmt, ScForStatement, ScWhileStmt, ScDoStmt, ScCaseClause
+ *  - Dart:     DartIfStatement, DartForStatement, DartWhileStatement, DartDoWhileStatement,
+ *              DartSwitchCase, DartCatchPart, DartTernaryExpression
+ *  - Terraform/HCL: HCLConditionalExpression
+ *  - C#/CFML/etc. via plugins: equivalent Xxx*IfStatement / Xxx*CaseClause classes
+ *
+ * The switch/match container itself is NOT counted — each case/arm/entry is a separate branch.
+ */
+private class GenericPsiComplexityVisitor : PsiRecursiveElementVisitor() {
     var complexity = 0
         private set
 
-    override fun visitIfExpression(expression: KtIfExpression) {
-        complexity++
-        expression.acceptChildren(this)
+    override fun visitElement(element: PsiElement) {
+        if (isBranchingNode(element::class.java.simpleName)) complexity++
+        super.visitElement(element)
     }
 
-    override fun visitForExpression(expression: KtForExpression) {
-        complexity++
-        expression.acceptChildren(this)
-    }
+    private fun isBranchingNode(className: String): Boolean {
+        val n = className.lowercase()
+        return when {
+            // if / conditional / ternary
+            n.endsWith("ifstatement") || n.endsWith("ifexpression")
+                    || n.endsWith("ifexpr") || n.endsWith("ifstmt") -> true
+            n.endsWith("conditionalexpression") || n.endsWith("ternaryexpression") -> true
 
-    override fun visitWhileExpression(expression: KtWhileExpression) {
-        complexity++
-        expression.acceptChildren(this)
-    }
+            // for / foreach
+            n.endsWith("forstatement") || n.endsWith("forexpression")
+                    || n.endsWith("forexpr") || n.endsWith("forstmt")
+                    || n.endsWith("foreachstatement") || n.endsWith("forinstatement")
+                    || n.endsWith("forofstatement") -> true
 
-    override fun visitDoWhileExpression(expression: KtDoWhileExpression) {
-        complexity++
-        expression.acceptChildren(this)
-    }
+            // while / do-while / until / loop
+            n.endsWith("whilestatement") || n.endsWith("whileexpression")
+                    || n.endsWith("whileexpr") || n.endsWith("whilestmt")
+                    || n.endsWith("dowhilestatement") || n.endsWith("dowhileexpression")
+                    || n.endsWith("dowhilestmt") || n.endsWith("dostmt")
+                    || n.endsWith("untilstatement") || n.endsWith("loopexpr") -> true
 
-    override fun visitWhenExpression(expression: KtWhenExpression) {
-        // Each non-else arm is a separate decision path (mirrors Java switch-case CC counting)
-        val branchCount = expression.entries.count { !it.isElse }.coerceAtLeast(1)
-        complexity += branchCount
-        expression.acceptChildren(this)
-    }
+            // catch / except / rescue
+            n.endsWith("catchclause") || n.endsWith("catchsection")
+                    || n.endsWith("catchblock") || n.endsWith("catchpart")
+                    || n.endsWith("exceptpart") || n.endsWith("exceptclause")
+                    || n.endsWith("rescueclause") || n.endsWith("rescuestatement") -> true
 
-    override fun visitCatchSection(catchClause: KtCatchClause) {
-        complexity++
-        catchClause.acceptChildren(this)
-    }
-}
+            // case / when entries / match arms (each branch is a decision point)
+            n.endsWith("caseclause") || n.endsWith("casesection")
+                    || n.endsWith("casepart") || n.endsWith("caseitem")
+                    || n.endsWith("caselist") || n.endsWith("caselabel")
+                    || n.endsWith("typecaseclause") -> true
+            n.endsWith("matcharm") || n.endsWith("matchcase") -> true
+            n.endsWith("whenentry") -> true
 
-private class GroovyComplexityVisitor : GroovyRecursiveElementVisitor() {
-    var complexity = 0
-        private set
-
-    override fun visitIfStatement(ifStatement: GrIfStatement) {
-        complexity++
-        super.visitIfStatement(ifStatement)
-    }
-
-    override fun visitForStatement(forStatement: GrForStatement) {
-        complexity++
-        super.visitForStatement(forStatement)
-    }
-
-    override fun visitWhileStatement(whileStatement: GrWhileStatement) {
-        complexity++
-        super.visitWhileStatement(whileStatement)
-    }
-
-    override fun visitDoWhileStatement(doWhileStatement: GrDoWhileStatement) {
-        complexity++
-        super.visitDoWhileStatement(doWhileStatement)
-    }
-
-    override fun visitSwitchStatement(switchStatement: GrSwitchStatement) {
-        complexity += switchStatement.caseSections.count { !it.isDefault }.coerceAtLeast(1)
-        super.visitSwitchStatement(switchStatement)
-    }
-
-    override fun visitSwitchExpression(switchExpression: GrSwitchExpression) {
-        complexity += switchExpression.caseSections.count { !it.isDefault }.coerceAtLeast(1)
-        super.visitSwitchExpression(switchExpression)
-    }
-
-    override fun visitConditionalExpression(expression: GrConditionalExpression) {
-        complexity++
-        super.visitConditionalExpression(expression)
+            else -> false
+        }
     }
 }

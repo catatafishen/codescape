@@ -18,11 +18,19 @@ import javax.swing.JPanel
  */
 class TreemapPanel : JPanel() {
 
+    /** One user-level drill step. A step may represent a chain of single-child folders
+     *  that were auto-traversed when drilling down — treated atomically for Up/pop. */
+    private data class DrillStep(val chain: List<StatGroup>) {
+        val target: StatGroup get() = chain.last()
+        fun display(): String = chain.joinToString("/") { it.key }
+    }
+
     private var groups: List<StatGroup> = emptyList()
     private var metric: Metric = Metric.LOC
-    private var drillStack: ArrayDeque<StatGroup> = ArrayDeque()
+    private var drillStack: ArrayDeque<DrillStep> = ArrayDeque()
     private var rects: List<Pair<Rectangle2D.Double, StatGroup>> = emptyList()
     private var colorFor: (StatGroup) -> Color = { hashColor(it.key) }
+    private var onDrillChanged: ((StatGroup?) -> Unit)? = null
 
     init {
         background = JBColor.background()
@@ -31,13 +39,10 @@ class TreemapPanel : JPanel() {
             override fun mouseClicked(e: MouseEvent) {
                 val hit = hitTest(e.point) ?: return
                 if (e.clickCount == 2 && hit.children.isNotEmpty()) {
-                    drillStack.addLast(hit)
-                    repaint()
+                    drillInto(hit)
                 } else if (e.button == MouseEvent.BUTTON3 || (e.clickCount == 2 && hit.children.isEmpty())) {
                     // right-click or double-click on a leaf goes back a level
-                    if (drillStack.isNotEmpty()) {
-                        drillStack.removeLast(); repaint()
-                    }
+                    popDrill()
                 }
             }
         })
@@ -52,18 +57,43 @@ class TreemapPanel : JPanel() {
         repaint()
     }
 
+    /** Callback fired whenever the drill state changes (user drill-in or drill-out).
+     *  Argument is the currently drilled-into group (last in chain), or null at root. */
+    fun setOnDrillChanged(listener: (StatGroup?) -> Unit) {
+        onDrillChanged = listener
+    }
+
+    /** Currently drilled-into group, or null when showing the root level. */
+    fun currentDrilledGroup(): StatGroup? = drillStack.lastOrNull()?.target
+
     fun currentPath(): String =
-        if (drillStack.isEmpty()) "" else drillStack.joinToString(" / ") { it.key }
+        if (drillStack.isEmpty()) "" else drillStack.joinToString(" / ") { it.display() }
 
     fun popDrill(): Boolean {
         if (drillStack.isEmpty()) return false
         drillStack.removeLast()
         repaint()
+        onDrillChanged?.invoke(currentDrilledGroup())
         return true
     }
 
+    private fun drillInto(hit: StatGroup) {
+        // Auto-traverse single-child folder chains (e.g. src/main/java/com/example/...) so the
+        // user lands directly on the first node with real branching.
+        val chain = ArrayList<StatGroup>()
+        chain.add(hit)
+        var current = hit
+        while (current.children.size == 1 && current.children[0].children.isNotEmpty()) {
+            current = current.children[0]
+            chain.add(current)
+        }
+        drillStack.addLast(DrillStep(chain))
+        repaint()
+        onDrillChanged?.invoke(current)
+    }
+
     private fun currentGroups(): List<StatGroup> =
-        if (drillStack.isEmpty()) groups else drillStack.last().children
+        if (drillStack.isEmpty()) groups else drillStack.last().target.children
 
     private fun hitTest(p: Point): StatGroup? =
         rects.firstOrNull { it.first.contains(p.x.toDouble(), p.y.toDouble()) }?.second

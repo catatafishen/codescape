@@ -48,6 +48,8 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val table = JBTable(tableModel)
 
     private var scanResult: ScanResult? = null
+    private var rootGroups: List<StatGroup> = emptyList()
+    private var currentColorFn: (StatGroup) -> Color = { JBColor.GRAY }
 
     init {
         border = JBUI.Borders.empty(4)
@@ -93,13 +95,16 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
         add(split, BorderLayout.CENTER)
 
         refreshBtn.addActionListener { runScan() }
-        upBtn.addActionListener { if (treemap.popDrill()) refreshViews() }
+        upBtn.addActionListener { treemap.popDrill() }
         groupByBox.addActionListener { refreshViews() }
         metricBox.addActionListener { refreshViews() }
         includeTests.addActionListener { refreshViews() }
         includeGenerated.addActionListener { refreshViews() }
         includeResources.addActionListener { refreshViews() }
         includeOther.addActionListener { refreshViews() }
+
+        // Keep table, stacked bar, and summary in sync with the treemap's drill state.
+        treemap.setOnDrillChanged { applyDrill(it) }
     }
 
     private fun configureTable() {
@@ -152,7 +157,9 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
     private fun refreshViews() {
         val result = scanResult ?: run {
             summary.text = "Click Refresh to scan the project."
-            treemap.setData(emptyList(), Metric.LOC) { JBColor.GRAY }
+            rootGroups = emptyList()
+            currentColorFn = { JBColor.GRAY }
+            treemap.setData(emptyList(), Metric.LOC, currentColorFn)
             stackedBar.setData(emptyList(), Metric.LOC) { JBColor.GRAY }
             tableModel.update(emptyList(), Metric.LOC)
             return
@@ -168,23 +175,41 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
             includeOther.isSelected,
         )
         // Stable coloring for flat dimensions; directory gets per-name coloring too.
-        val colorFn: (StatGroup) -> Color = when (groupBy) {
+        currentColorFn = when (groupBy) {
             GroupBy.CATEGORY -> { g -> categoryColor(g.key) }
             else -> { g -> hashColor(g.key) }
         }
-        treemap.setData(groups, metric, colorFn)
-        stackedBar.setData(groups, metric, colorFn)
-        tableModel.update(groups, metric)
+        rootGroups = groups
+        // setData clears drill internally; we then render the (now-root) level into the table/bar.
+        treemap.setData(groups, metric, currentColorFn)
+        applyDrill(null)
+    }
 
-        val totalMetric = groups.sumOf { it.value(metric) }
-        val totalFiles = result.fileCount
+    /**
+     * Sync table, stacked bar, and summary with the treemap's current drill level.
+     * `drilled == null` means root level (top-level aggregated groups).
+     */
+    private fun applyDrill(drilled: StatGroup?) {
+        val result = scanResult ?: return
+        val metric = metricBox.selectedItem as Metric
+        val shown = drilled?.children ?: rootGroups
+        stackedBar.setData(shown, metric, currentColorFn)
+        tableModel.update(shown, metric)
+
+        val scopeFiles = drilled?.fileCount ?: result.fileCount
+        val scopeTotal = drilled?.totalLines ?: result.totalLines
+        val scopeNonBlank = drilled?.nonBlankLines ?: result.nonBlankLines
+        val scopeCode = drilled?.codeLines ?: result.codeLines
+        val scopeCplx = drilled?.complexity ?: result.complexity
+        val scopeSize = drilled?.sizeBytes ?: result.sizeBytes
+        val totalMetric = shown.sumOf { it.value(metric) }
         summary.text = buildString {
-            append("Files: %,d | ".format(totalFiles))
-            append("Total LOC: %,d | ".format(result.totalLines))
-            append("Non-blank: %,d | ".format(result.nonBlankLines))
-            append("Code LOC: %,d | ".format(result.codeLines))
-            append("Complexity: %,d | ".format(result.complexity))
-            append("Size: ${humanBytes(result.sizeBytes)} | ")
+            append("Files: %,d | ".format(scopeFiles))
+            append("Total LOC: %,d | ".format(scopeTotal))
+            append("Non-blank: %,d | ".format(scopeNonBlank))
+            append("Code LOC: %,d | ".format(scopeCode))
+            append("Complexity: %,d | ".format(scopeCplx))
+            append("Size: ${humanBytes(scopeSize)} | ")
             append("Scan: ${result.scannedMillis} ms | ")
             append("Shown (${metric.display}): ${format(metric, totalMetric)}")
             if (treemap.currentPath().isNotEmpty()) append(" | Drill: ${treemap.currentPath()}")
