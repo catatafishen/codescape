@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40" fill="none">
+  <!-- Left bracket -->
+  <path d="M11 5 H5 V35 H11" stroke="#3574F0" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Right bracket -->
+  <path d="M29 5 H35 V35 H29" stroke="#3574F0" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Sigma Σ -->
+  <path d="M28 11 H13 L20.5 20 L13 29 H28" stroke="#1A1A1A" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>
