@@ -45,7 +45,7 @@ jobs:
         run: ./gradlew buildPlugin --no-daemon --quiet
 
       - name: Run tests
-        run: ./gradlew test --no-daemon
+        run: ./gradlew unitTest test --no-daemon
 
       - name: Upload coverage to Codecov
         if: always() && hashFiles('build/reports/jacoco/test/jacocoTestReport.xml') != ''

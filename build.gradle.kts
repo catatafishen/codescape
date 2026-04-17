@@ -1,6 +1,7 @@
 plugins {
     id("org.jetbrains.kotlin.jvm") version "2.3.20"
     id("org.jetbrains.intellij.platform") version "2.1.0"
+    jacoco
 }
 
 group = "com.github.projectstats"
@@ -21,6 +22,9 @@ dependencies {
         instrumentationTools()
         pluginVerifier()
     }
+    testImplementation(kotlin("stdlib"))
+    testImplementation("org.junit.jupiter:junit-jupiter:5.11.3")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.11.3")
 }
 
 kotlin {
@@ -49,8 +53,39 @@ intellijPlatform {
     buildSearchableOptions = false
 }
 
-tasks.test {
+// Plain JUnit test task (no IntelliJ platform classloader) so jacoco can instrument our classes.
+// The IntelliJ-platform plugin reconfigures `test` to launch under the JBR/PathClassLoader, which
+// prevents the jacoco agent from seeing class definitions for our production code. Running a
+// parallel `unitTest` task with a stock JVM keeps pure-Kotlin unit tests measurable.
+val unitTest = tasks.register<Test>("unitTest") {
+    description = "Runs plain JUnit 5 unit tests outside the IntelliJ platform classloader."
+    group = "verification"
+    testClassesDirs = sourceSets["test"].output.classesDirs
+    classpath = sourceSets["test"].runtimeClasspath
     useJUnitPlatform()
+    finalizedBy(tasks.jacocoTestReport)
+}
+
+tasks.check {
+    dependsOn(unitTest)
+}
+
+tasks.jacocoTestReport {
+    dependsOn(unitTest)
+    executionData.setFrom(fileTree(layout.buildDirectory).include("/jacoco/unitTest.exec"))
+    // Keep coverage focused on the production classes we actually exercise from unit tests.
+    // IntelliJ-platform post-instrumentation is irrelevant here because the unitTest task
+    // runs on a stock JVM and loads the unmodified kotlin/main classes.
+    classDirectories.setFrom(
+        fileTree("$buildDir/classes/kotlin/main") {
+            include("com/github/projectstats/**")
+        }
+    )
+    sourceDirectories.setFrom(files("src/main/kotlin"))
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+    }
 }
 
 tasks {
