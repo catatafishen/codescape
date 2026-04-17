@@ -24,7 +24,7 @@
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow id="Project Stats"
                     anchor="right"
-                    icon="AllIcons.Actions.ShowAsTree"
+                    icon="/icons/projectStatsToolWindow.svg"
                     factoryClass="com.github.projectstats.ProjectStatsToolWindowFactory"/>
     </extensions>
 </idea-plugin>
