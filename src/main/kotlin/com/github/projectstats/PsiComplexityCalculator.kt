@@ -7,6 +7,7 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiJavaFile
 import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiRecursiveElementVisitor
+import com.intellij.psi.impl.compiled.ClsFileImpl
 import com.siyeh.ig.classmetrics.CyclomaticComplexityVisitor
 
 /**
@@ -24,6 +25,8 @@ import com.siyeh.ig.classmetrics.CyclomaticComplexityVisitor
 object PsiComplexityCalculator {
     fun calculate(file: VirtualFile, project: Project): Int? {
         val psiFile = PsiManager.getInstance(project).findFile(file) ?: return null
+        // Compiled .class files must not be walked with a recursive visitor — too slow and logs errors.
+        if (psiFile is ClsFileImpl) return null
         // Plain text / unknown files have no real PSI tree — let the keyword fallback handle them.
         if (psiFile.language == PlainTextLanguage.INSTANCE) return null
         return when (psiFile) {
