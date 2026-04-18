@@ -33,7 +33,6 @@ import javax.swing.Box
 import javax.swing.JButton
 import javax.swing.JLabel
 import javax.swing.JPanel
-import javax.swing.JScrollPane
 import javax.swing.JTable
 import javax.swing.RowSorter
 import javax.swing.SortOrder
@@ -117,11 +116,8 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
         configureTable()
         configureTotalsTable()
 
-        // Use a plain JScrollPane instead of JBScrollPane to avoid the overlay-scrollbar
-        // animation timer that fires continuously (even when unfocused) and drives
-        // ~30 Component.reshape + updateCursorImmediately calls per second on the EDT.
         val tableBlock = JPanel(BorderLayout()).apply {
-            add(JScrollPane(table), BorderLayout.CENTER)
+            add(JBScrollPane(table), BorderLayout.CENTER)
             add(totalsTable, BorderLayout.SOUTH)
         }
 
