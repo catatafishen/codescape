@@ -8,26 +8,30 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.AnimatedIcon
 import com.intellij.ui.JBColor
+import com.intellij.ui.OnePixelSplitter
+import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.table.JBTable
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
+import java.awt.CardLayout
 import java.awt.Color
 import java.awt.Component
 import java.awt.Cursor
 import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.Font
+import java.awt.GridBagConstraints
+import java.awt.GridBagLayout
+import java.awt.Insets
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
-import javax.swing.Box
 import javax.swing.BorderFactory
+import javax.swing.Box
 import javax.swing.JButton
-import javax.swing.JCheckBox
 import javax.swing.JLabel
 import javax.swing.JPanel
-import javax.swing.JSplitPane
 import javax.swing.JTable
 import javax.swing.RowSorter
 import javax.swing.SortOrder
@@ -40,12 +44,12 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
 
     private val groupByBox = ComboBox(GroupBy.values()).apply { selectedItem = GroupBy.LANGUAGE }
     private val metricBox = ComboBox(Metric.values()).apply { selectedItem = Metric.LOC }
-    private val includeTests = JCheckBox("Tests", true)
-    private val includeGenerated = JCheckBox("Generated", false)
-    private val includeResources = JCheckBox("Resources", true)
-    private val includeOther = JCheckBox("Other", true)
-    private val refreshBtn = JButton(AllIcons.Actions.Execute).apply {
-        toolTipText = "Scan project"
+    private val includeTests = JBCheckBox("Tests", true)
+    private val includeGenerated = JBCheckBox("Generated", false)
+    private val includeResources = JBCheckBox("Resources", true)
+    private val includeOther = JBCheckBox("Other", true)
+    private val refreshBtn = JButton(AllIcons.Actions.Refresh).apply {
+        toolTipText = "Refresh stats"
         isFocusable = false
         isBorderPainted = false
         isContentAreaFilled = false
@@ -69,10 +73,18 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val totalsModel = TotalsTableModel()
     private val totalsTable = JBTable(totalsModel)
 
+    private val treemapCard = JPanel(CardLayout())
+    private val tableCard = JPanel(CardLayout())
+
     private var scanResult: ScanResult? = null
     private var rootGroups: List<StatGroup> = emptyList()
     private var currentColorFn: (StatGroup) -> Color = { JBColor.GRAY }
     private var scanning: Boolean = false
+
+    companion object {
+        private const val CARD_EMPTY = "empty"
+        private const val CARD_DATA = "data"
+    }
 
     init {
         border = JBUI.Borders.empty(4)
@@ -112,9 +124,15 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
             add(treemap, BorderLayout.CENTER)
         }
 
-        val split = JSplitPane(JSplitPane.HORIZONTAL_SPLIT, centerTop, tableBlock).apply {
-            resizeWeight = 0.6
-            dividerSize = 4
+        treemapCard.add(createEmptyPanel(), CARD_EMPTY)
+        treemapCard.add(centerTop, CARD_DATA)
+
+        tableCard.add(createEmptyPanel(), CARD_EMPTY)
+        tableCard.add(tableBlock, CARD_DATA)
+
+        val split = OnePixelSplitter(false, 0.6f).apply {
+            firstComponent = treemapCard
+            secondComponent = tableCard
         }
 
         val kpis = JPanel(FlowLayout(FlowLayout.LEFT, 16, 2)).apply {
@@ -142,8 +160,39 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
         includeResources.addActionListener { refreshViews() }
         includeOther.addActionListener { refreshViews() }
 
-        // Keep table, stacked bar, and summary in sync with the treemap's drill state.
+        showCard(treemapCard, CARD_EMPTY)
+        showCard(tableCard, CARD_EMPTY)
+
         treemap.setOnDrillChanged { applyDrill(it) }
+    }
+
+    private fun createEmptyPanel(): JPanel {
+        return JPanel(GridBagLayout()).apply {
+            val gbc = GridBagConstraints().apply {
+                gridx = 0
+                gridy = GridBagConstraints.RELATIVE
+                anchor = GridBagConstraints.CENTER
+                insets = Insets(5, 0, 5, 0)
+            }
+            val titleLabel = JBLabel("No stats yet").apply {
+                font = font.deriveFont(Font.BOLD, 16f)
+            }
+            val subLabel = JBLabel("Scan your project to see code statistics").apply {
+                foreground = JBColor.GRAY
+            }
+            val scanBtn = JButton("Scan Project").apply {
+                font = font.deriveFont(Font.PLAIN, font.size2D + 1f)
+                addActionListener { runScan() }
+            }
+            add(titleLabel, gbc)
+            add(subLabel, gbc)
+            add(Box.createVerticalStrut(4), gbc)
+            add(scanBtn, gbc)
+        }
+    }
+
+    private fun showCard(panel: JPanel, card: String) {
+        (panel.layout as CardLayout).show(panel, card)
     }
 
     private fun configureTable() {
@@ -236,14 +285,13 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
 
     private fun setScanning(running: Boolean) {
         scanning = running
-        refreshBtn.icon = if (running) AnimatedIcon.Default.INSTANCE else AllIcons.Actions.Execute
-        refreshBtn.toolTipText = if (running) "Scanning…" else "Scan project"
+        refreshBtn.icon = if (running) AnimatedIcon.Default.INSTANCE else AllIcons.Actions.Refresh
+        refreshBtn.toolTipText = if (running) "Scanning…" else "Refresh stats"
         refreshBtn.isEnabled = !running
     }
 
     private fun refreshViews() {
         val result = scanResult ?: run {
-            footerStatus.text = "Click the play button to scan the project."
             setKpis(0L, 0L, 0L, 0L)
             rootGroups = emptyList()
             currentColorFn = { JBColor.GRAY }
@@ -252,6 +300,8 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
             stackedBar.setData(emptyList(), Metric.LOC) { JBColor.GRAY }
             tableModel.update(emptyList(), Metric.LOC)
             totalsModel.clear()
+            showCard(treemapCard, CARD_EMPTY)
+            showCard(tableCard, CARD_EMPTY)
             updateBreadcrumbs()
             return
         }
@@ -265,15 +315,15 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
             includeResources.isSelected,
             includeOther.isSelected,
         )
-        // Stable coloring for flat dimensions; directory gets per-name coloring too.
         currentColorFn = when (groupBy) {
             GroupBy.CATEGORY -> { g -> categoryColor(g.key) }
             else -> { g -> hashColor(g.key) }
         }
         rootGroups = groups
         treemap.setSingleClickDrill(groupBy == GroupBy.DIRECTORY)
-        // setData clears drill internally; we then render the (now-root) level into the table/bar.
         treemap.setData(groups, metric, currentColorFn)
+        showCard(treemapCard, CARD_DATA)
+        showCard(tableCard, CARD_DATA)
         applyDrill(null)
     }
 
