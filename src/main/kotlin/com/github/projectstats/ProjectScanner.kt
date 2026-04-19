@@ -1,6 +1,6 @@
 package com.github.projectstats
 
-import com.intellij.openapi.application.ReadAction
+import com.intellij.openapi.application.runReadAction
 import com.intellij.openapi.fileTypes.FileType
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.project.Project
@@ -110,7 +110,7 @@ object ProjectScanner {
         try {
             val futures = toProcess.map { file ->
                 executor.submit(Callable {
-                    ReadAction.compute<FileStat?, RuntimeException> {
+                    runReadAction {
                         classify(file, project, fileIndex, projectBase)
                     }?.let { base ->
                         if (commitCounts.isEmpty()) base

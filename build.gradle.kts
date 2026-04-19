@@ -1,6 +1,8 @@
+import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel
+
 plugins {
     id("org.jetbrains.kotlin.jvm") version "2.3.20"
-    id("org.jetbrains.intellij.platform") version "2.1.0"
+    id("org.jetbrains.intellij.platform") version "2.11.0"
     jacoco
 }
 
@@ -19,7 +21,6 @@ dependencies {
     intellijPlatform {
         intellijIdeaCommunity("2024.2.3")
         bundledPlugin("com.intellij.java")
-        instrumentationTools()
         pluginVerifier()
     }
     testImplementation(kotlin("stdlib"))
@@ -45,10 +46,27 @@ intellijPlatform {
     }
     pluginVerification {
         ides {
-            // Pin to a known-released IDE to avoid flaky `recommended()` picking
-            // versions whose tarballs are not yet published to the download mirror.
-            ide(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdeaCommunity, "2024.2.3")
+            // Verify against 2025.3 where ToolWindowFactory.getIcon/getAnchor/manage are
+            // @Experimental (not @Internal as in 242–252). Kotlin generates bridge methods
+            // for all Java interface defaults, so any ToolWindowFactory impl inherits them.
+            // No alternative API exists — these are unavoidable inherited defaults.
+            // Since 2025.3, IC artifacts moved to "intellijIdea" (no longer "ideaIC").
+            create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdea, "2025.3")
         }
+        // Fail the build on internal API usages and real compatibility problems.
+        // Deprecated and experimental API usages are reported as warnings but do NOT
+        // fail the build — our ToolWindowFactory inherits deprecated/experimental
+        // default methods (isApplicable, isDoNotActivateOnStart, getAnchor, getIcon,
+        // manage) that we don't call or override; the platform invokes them on our
+        // instance. We already use the modern replacements (shouldBeAvailable,
+        // plugin.xml anchor/icon attributes). If JetBrains removes these defaults,
+        // no code change on our side is needed — only a platform-plugin version bump.
+        failureLevel = listOf(
+            FailureLevel.COMPATIBILITY_PROBLEMS,
+            FailureLevel.INTERNAL_API_USAGES,
+            FailureLevel.INVALID_PLUGIN,
+            FailureLevel.MISSING_DEPENDENCIES,
+        )
     }
     buildSearchableOptions = false
 }
@@ -77,7 +95,7 @@ tasks.jacocoTestReport {
     // IntelliJ-platform post-instrumentation is irrelevant here because the unitTest task
     // runs on a stock JVM and loads the unmodified kotlin/main classes.
     classDirectories.setFrom(
-        fileTree("$buildDir/classes/kotlin/main") {
+        fileTree(layout.buildDirectory.dir("classes/kotlin/main")) {
             include("com/github/projectstats/**")
         }
     )
@@ -90,6 +108,6 @@ tasks.jacocoTestReport {
 
 tasks {
     wrapper {
-        gradleVersion = "8.10"
+        gradleVersion = "8.13"
     }
 }
