@@ -34,7 +34,7 @@ class CoverageReportPanel(private val project: Project, private val onChanged: (
 
         // Header
         val header = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply {
-            add(JBLabel("Coverage Reports", Font.BOLD).apply {
+            add(JBLabel("Coverage Reports").apply {
                 font = font.deriveFont(Font.BOLD, 12f)
             })
         }
