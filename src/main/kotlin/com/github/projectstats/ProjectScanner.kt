@@ -3,6 +3,7 @@ package com.github.projectstats
 import com.github.projectstats.coverage.CoverageData
 import com.github.projectstats.coverage.CoverageLoader
 import com.github.projectstats.coverage.CoverageMatcher
+import com.github.projectstats.coverage.CoverageReportSettings
 import com.intellij.openapi.application.runReadAction
 import com.intellij.openapi.fileTypes.FileType
 import com.intellij.openapi.progress.ProgressIndicator
@@ -50,7 +51,12 @@ object ProjectScanner {
         val rawFiles = classifyInParallel(toProcess, project, fileIndex, projectBase, commitCounts, indicator)
 
         // Coverage is opt-in: we only attach it if a recognised report exists at a standard path.
-        val coverage: CoverageData? = projectBase?.let { CoverageLoader.load(it, indicator) }
+        val settings = CoverageReportSettings.getInstance(project)
+        val selectedReports = settings.manualReports
+            .filter { it.enabled }
+            .map { it.path }
+            .takeIf { it.isNotEmpty() }
+        val coverage: CoverageData? = projectBase?.let { CoverageLoader.load(it, selectedReports, indicator) }
         val files = applyCoverage(rawFiles, coverage)
 
         var totalLines = 0L

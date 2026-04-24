@@ -6,6 +6,7 @@ import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
+import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.ui.AnimatedIcon
 import com.intellij.ui.JBColor
 import com.intellij.ui.OnePixelSplitter
@@ -39,6 +40,15 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
         isContentAreaFilled = false
         margin = JBUI.emptyInsets()
         putClientProperty("JButton.buttonType", "toolBarButton")
+    }
+    private val coverageBtn = JButton(AllIcons.General.Settings).apply {
+        toolTipText = "Manage coverage reports"
+        isFocusable = false
+        isBorderPainted = false
+        isContentAreaFilled = false
+        margin = JBUI.emptyInsets()
+        putClientProperty("JButton.buttonType", "toolBarButton")
+        addActionListener { showCoverageReportsDialog() }
     }
     private val footerStatus = JBLabel(" ")
     private val kpiFiles = kpiLabel()
@@ -98,7 +108,10 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
                 add(includeResources)
                 add(includeOther)
             }, BorderLayout.CENTER)
-            add(refreshBtn, BorderLayout.EAST)
+            add(JPanel(FlowLayout(FlowLayout.RIGHT, 4, 2)).apply {
+                add(coverageBtn)
+                add(refreshBtn)
+            }, BorderLayout.EAST)
         }
 
         val header = JPanel(BorderLayout())
@@ -403,6 +416,22 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
             })
         }
         return label
+    }
+
+    private fun showCoverageReportsDialog() {
+        val dialog = object : DialogWrapper(project, true) {
+            init {
+                title = "Manage Coverage Reports"
+                init()
+            }
+
+            override fun createCenterPanel(): JComponent {
+                return CoverageReportPanel(project) { runScan() }
+            }
+
+            override fun getPreferredFocusedComponent(): JComponent? = null
+        }
+        dialog.showAndGet()
     }
 
     private fun categoryColor(key: String): Color = when (key) {

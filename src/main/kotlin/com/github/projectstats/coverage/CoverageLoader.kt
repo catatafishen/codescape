@@ -2,6 +2,7 @@ package com.github.projectstats.coverage
 
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.ProgressIndicator
+import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileVisitor
@@ -27,9 +28,77 @@ object CoverageLoader {
     private val SKIPPED_DIRS = setOf(".git", ".hg", ".idea", "node_modules", ".gradle", "dist")
 
     /**
-     * Scan [projectBase] for a coverage report. Returns merged coverage data, or null if nothing is found.
+     * Discover all coverage reports in [projectBase], returning both auto-detected and user-configured ones.
      */
-    fun load(projectBase: VirtualFile, indicator: ProgressIndicator?): CoverageData? {
+    data class DiscoveryResult(
+        val autoDetected: List<String> = emptyList(),  // Paths to found reports
+        val manual: List<String> = emptyList(),         // User-added paths
+    )
+
+    /**
+     * Scan [projectBase] for coverage reports and return discovery results.
+     */
+    fun discoverReports(projectBase: VirtualFile, indicator: ProgressIndicator?): DiscoveryResult {
+        indicator?.text2 = "Looking for coverage reports"
+        val lcov = ArrayList<String>(2)
+        val cobertura = ArrayList<String>(2)
+        val jacoco = ArrayList<String>(8)
+
+        VfsUtilCore.visitChildrenRecursively(projectBase, object : VirtualFileVisitor<Any?>() {
+            override fun visitFile(file: VirtualFile): Boolean {
+                if (file.isDirectory) {
+                    return file.name !in SKIPPED_DIRS
+                }
+                val name = file.name
+                val nameLower = name.lowercase()
+                when {
+                    nameLower in LCOV_NAMES -> lcov.add(file.path)
+                    nameLower in COBERTURA_NAMES -> cobertura.add(file.path)
+                    nameLower.startsWith("jacoco") && nameLower.endsWith(".xml") -> jacoco.add(file.path)
+                }
+                return true
+            }
+        })
+
+        val autoDetected = mutableListOf<String>()
+        lcov.firstOrNull()?.let { autoDetected.add(it) }
+        cobertura.firstOrNull()?.let { autoDetected.add(it) }
+        jacoco.forEach { autoDetected.add(it) }
+
+        return DiscoveryResult(autoDetected, emptyList())
+    }
+
+    /**
+     * Load coverage from selected reports. Reports are tried in priority order (LCOV → Cobertura → JaCoCo).
+     * Multiple JaCoCo reports are merged if present.
+     */
+    fun load(projectBase: VirtualFile, reportPaths: List<String>?, indicator: ProgressIndicator?): CoverageData? {
+        if (reportPaths == null || reportPaths.isEmpty()) {
+            return loadAutomatically(projectBase, indicator)
+        }
+
+        // Try to load the selected reports in order
+        for (path in reportPaths) {
+            val file = projectBase.findFileByRelativePath(path)
+                ?: VfsUtilCore.findRelativeFile(path, projectBase)
+            if (file != null && !file.isDirectory) {
+                when {
+                    file.name.lowercase() in LCOV_NAMES -> readSafely(file, LcovReader)?.let { return it }
+                    file.name.lowercase() in COBERTURA_NAMES -> readSafely(file, CoberturaReader)?.let { return it }
+                    file.name.lowercase().startsWith("jacoco") && file.name.lowercase().endsWith(".xml") ->
+                        readSafely(file, JacocoReader)?.let { return it }
+                }
+            }
+        }
+
+        // Fallback to auto-detection if nothing was loadable
+        return loadAutomatically(projectBase, indicator)
+    }
+
+    /**
+     * Auto-detect and load coverage (legacy behavior).
+     */
+    private fun loadAutomatically(projectBase: VirtualFile, indicator: ProgressIndicator?): CoverageData? {
         indicator?.text2 = "Looking for coverage reports"
         val lcov = ArrayList<VirtualFile>(2)
         val cobertura = ArrayList<VirtualFile>(2)
