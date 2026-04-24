@@ -1,0 +1,10 @@
+<component name="libraryTable">
+  <library name="Gradle: bundledPlugin:com.intellij.platform.images:242.23339.11+919" type="java-imported" external-system-id="GRADLE">
+    <properties groupId="bundledPlugin" artifactId="com.intellij.platform.images" version="242.23339.11+919" baseVersion="242.23339.11+919" />
+    <CLASSES>
+      <root url="jar://$USER_HOME$/.gradle/caches/8.10/transforms/d161b2b92302bc822409a463e91e4221/transformed/ideaIC-2024.2.3/plugins/platform-images/lib/platform-images.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
