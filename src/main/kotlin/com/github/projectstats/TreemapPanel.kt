@@ -548,13 +548,11 @@ class TreemapPanel : JPanel() {
             clearHoverPreview()
             return
         }
-        // Reserve space for the parent's own label inside the cell.
-        val padTop = 18.0
-        val pad = 4.0
+        // Hover preview fills the entire parent cell with no margins.
         val inner = Rectangle2D.Double(
-            rect.x + pad, rect.y + padTop,
-            (rect.width - 2 * pad).coerceAtLeast(0.0),
-            (rect.height - padTop - pad).coerceAtLeast(0.0),
+            rect.x, rect.y,
+            rect.width,
+            rect.height,
         )
         val data = hit.children.filter { it.value(metric) > 0 }.sortedByDescending { it.value(metric) }
         val total = data.sumOf { it.value(metric).toDouble() }
