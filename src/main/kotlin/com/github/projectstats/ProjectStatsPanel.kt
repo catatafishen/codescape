@@ -1,29 +1,27 @@
 package com.github.projectstats
 
-import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogWrapper
-import com.intellij.ui.AnimatedIcon
 import com.intellij.ui.JBColor
 import com.intellij.ui.OnePixelSplitter
-import com.intellij.ui.components.breadcrumbs.Breadcrumbs
-import com.intellij.ui.components.breadcrumbs.Crumb
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
+import com.intellij.ui.components.breadcrumbs.Breadcrumbs
+import com.intellij.ui.components.breadcrumbs.Crumb
 import com.intellij.ui.table.JBTable
 import com.intellij.util.ui.JBUI
 import java.awt.*
+import java.util.*
 import javax.swing.*
 import javax.swing.event.ChangeEvent
 import javax.swing.table.AbstractTableModel
 import javax.swing.table.DefaultTableCellRenderer
 import javax.swing.table.TableRowSorter
-import java.util.*
 
 class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
 
@@ -33,7 +31,6 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val includeGenerated = JBCheckBox("Generated", false)
     private val includeResources = JBCheckBox("Resources", true)
     private val includeOther = JBCheckBox("Other", true)
-    private val footerStatus = JBLabel(" ")
     private val kpiFiles = kpiLabel()
     private val kpiLoc = kpiLabel()
     private val kpiSize = kpiLabel()
@@ -42,7 +39,7 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
     // Maps each crumb to the drill depth it should navigate to (0 = project root).
     private val crumbTargets = IdentityHashMap<Crumb, Int>()
     private val breadcrumbs = Breadcrumbs().apply {
-        isVisible = false
+        preferredSize = Dimension(400, 22)
         onSelect { crumb, _ ->
             crumbTargets[crumb]?.let { treemap.popToDepth(it) }
         }
@@ -50,6 +47,7 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val breadcrumbRow = JPanel(BorderLayout()).apply {
         border = JBUI.Borders.emptyTop(2)
         isVisible = false
+        preferredSize = Dimension(0, 24)
         add(JLabel("Path: ").apply { border = JBUI.Borders.emptyRight(4) }, BorderLayout.WEST)
         add(breadcrumbs, BorderLayout.CENTER)
     }
@@ -143,15 +141,10 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
             add(kpiBlock("Size", kpiSize))
             add(kpiBlock("Scan", kpiScan))
         }
-        val footer = JPanel(BorderLayout()).apply {
-            border = JBUI.Borders.emptyTop(4)
-            add(kpis, BorderLayout.CENTER)
-            add(footerStatus, BorderLayout.SOUTH)
-        }
 
         add(header, BorderLayout.NORTH)
         add(split, BorderLayout.CENTER)
-        add(footer, BorderLayout.SOUTH)
+        add(kpis, BorderLayout.SOUTH)
 
         groupByBox.addActionListener { refreshViews() }
         metricBox.addActionListener { refreshViews() }
@@ -262,7 +255,6 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
 
     fun runScan() {
         setScanning(true)
-        footerStatus.text = "Scanning…"
         object : Task.Backgroundable(project, "Computing project statistics", true) {
             override fun run(indicator: ProgressIndicator) {
                 indicator.isIndeterminate = false
@@ -271,7 +263,6 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
                 ApplicationManager.getApplication().invokeLater {
                     scanResult = result
                     setScanning(false)
-                    footerStatus.text = result.coverageSource?.let { "Coverage: $it" } ?: " "
                     refreshViews()
                 }
             }
@@ -279,14 +270,12 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
             override fun onCancel() {
                 ApplicationManager.getApplication().invokeLater {
                     setScanning(false)
-                    footerStatus.text = "Scan cancelled."
                 }
             }
 
             override fun onThrowable(error: Throwable) {
                 ApplicationManager.getApplication().invokeLater {
                     setScanning(false)
-                    footerStatus.text = "Scan failed: ${error.message}"
                 }
             }
         }.queue()

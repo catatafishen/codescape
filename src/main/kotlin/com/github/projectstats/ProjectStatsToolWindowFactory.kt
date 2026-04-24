@@ -21,6 +21,9 @@ class ProjectStatsToolWindowFactory : ToolWindowFactory, DumbAware {
             object : AnAction("Manage Coverage Reports", null, AllIcons.General.Settings) {
                 override fun actionPerformed(e: AnActionEvent) = panel.showCoverageReportsDialog()
                 override fun getActionUpdateThread() = com.intellij.openapi.actionSystem.ActionUpdateThread.EDT
+                override fun update(e: AnActionEvent) {
+                    e.presentation.isEnabled = true
+                }
             },
             object : AnAction("Refresh", null, AllIcons.Actions.Refresh) {
                 override fun actionPerformed(e: AnActionEvent) = panel.runScan()
