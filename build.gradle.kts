@@ -1,4 +1,5 @@
 import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel
+import java.util.zip.ZipInputStream
 
 plugins {
     id("org.jetbrains.kotlin.jvm") version "2.3.20"
@@ -104,6 +105,89 @@ tasks.jacocoTestReport {
         xml.required.set(true)
         html.required.set(true)
     }
+}
+
+tasks.register("deployToMainIde") {
+    group = "deployment"
+    description = "Builds the plugin ZIP and installs it into the running IDE's plugin directory."
+    dependsOn("buildPlugin")
+    doLast {
+        val distDir = layout.buildDirectory.dir("distributions").get().asFile
+        val latestZip = distDir.listFiles()
+            ?.filter { it.extension == "zip" }
+            ?.maxByOrNull { it.lastModified() }
+            ?: error("No ZIP found in $distDir — build failed?")
+
+        logger.lifecycle("📦 ZIP: ${latestZip.name}")
+
+        val installDir = detectPluginInstallDir()
+        logger.lifecycle("📂 Target: $installDir")
+        if (installDir.exists()) installDir.deleteRecursively()
+        ZipInputStream(latestZip.inputStream()).use { zis: ZipInputStream ->
+            var entry = zis.nextEntry
+            while (entry != null) {
+                val dest = File(installDir.parentFile, entry.name)
+                if (entry.isDirectory) dest.mkdirs()
+                else {
+                    dest.parentFile.mkdirs(); dest.outputStream().use { zis.copyTo(it) }
+                }
+                zis.closeEntry()
+                entry = zis.nextEntry
+            }
+        }
+        logger.lifecycle("✅ Plugin deployed to $installDir")
+        logger.lifecycle("⚠️  Restart IntelliJ to apply the new version.")
+    }
+}
+
+/** Finds the plugin install directory in the running IDE's plugin folder. */
+fun detectPluginInstallDir(): File {
+    val home = System.getProperty("user.home")
+    val pluginDirNames = listOf("project-stats", "codescape")
+
+    // 1. Toolbox per-IDE plugin dir: ~/.local/share/JetBrains/IntelliJIdea*/<plugin>
+    val dataBase = File(home, ".local/share/JetBrains")
+    if (dataBase.exists()) {
+        val found = dataBase.listFiles()
+            ?.filter { it.isDirectory && it.name.startsWith("IntelliJIdea") }
+            ?.sortedByDescending { it.name }
+            ?.firstNotNullOfOrNull { ideDir ->
+                pluginDirNames.map { ideDir.resolve(it) }.firstOrNull { it.exists() }
+            }
+        if (found != null) return found
+    }
+
+    // 2. Toolbox app-level plugins: ~/.local/share/JetBrains/Toolbox/apps/.../plugins/<plugin>
+    val toolboxBase = File(home, ".local/share/JetBrains/Toolbox/apps")
+    if (toolboxBase.exists()) {
+        val found = toolboxBase.walkTopDown().maxDepth(3)
+            .filter { it.isDirectory && it.name == "plugins" }
+            .firstNotNullOfOrNull { pluginsDir ->
+                pluginDirNames.map { File(pluginsDir, it) }.firstOrNull { it.exists() }
+            }
+        if (found != null) return found
+    }
+
+    // 3. Fallback: ~/.config/JetBrains/IntelliJIdea*/plugins/<plugin>
+    val configBase = File(home, ".config/JetBrains")
+    if (configBase.exists()) {
+        val found = configBase.listFiles()
+            ?.filter { it.isDirectory && it.name.startsWith("IntelliJIdea") }
+            ?.sortedByDescending { it.name }
+            ?.firstNotNullOfOrNull { ideDir ->
+                val pluginsDir = File(ideDir, "plugins")
+                pluginDirNames.map { File(pluginsDir, it) }.firstOrNull { it.exists() }
+            }
+        if (found != null) return found
+    }
+
+    error(
+        "Cannot find plugin install directory. Checked:\n" +
+        "  • ~/.local/share/JetBrains/IntelliJIdea*/{${pluginDirNames.joinToString(", ")}}\n" +
+        "  • ~/.local/share/JetBrains/Toolbox/apps/*/plugins/{${pluginDirNames.joinToString(", ")}}\n" +
+        "  • ~/.config/JetBrains/IntelliJIdea*/plugins/{${pluginDirNames.joinToString(", ")}}\n" +
+        "Make sure IntelliJ is running and the plugin is installed."
+    )
 }
 
 tasks {

@@ -32,7 +32,7 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val includeGenerated = JBCheckBox("Generated", false)
     private val includeResources = JBCheckBox("Resources", true)
     private val includeOther = JBCheckBox("Other", true)
-    private val refreshBtn = JButton(AllIcons.Actions.Refresh).apply {
+    val refreshBtn = JButton(AllIcons.Actions.Refresh).apply {
         toolTipText = "Refresh stats"
         isFocusable = false
         isBorderPainted = false
@@ -85,17 +85,21 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
     init {
         border = JBUI.Borders.empty(4)
 
-        val toolbar = JPanel(FlowLayout(FlowLayout.LEFT, 6, 2))
-        toolbar.add(JLabel("Group by:"))
-        toolbar.add(groupByBox)
-        toolbar.add(JLabel("  Metric:"))
-        toolbar.add(metricBox)
-        toolbar.add(Box.createHorizontalStrut(8))
-        toolbar.add(JLabel("Include:"))
-        toolbar.add(includeTests)
-        toolbar.add(includeGenerated)
-        toolbar.add(includeResources)
-        toolbar.add(includeOther)
+        val toolbar = JPanel(BorderLayout()).apply {
+            add(JPanel(FlowLayout(FlowLayout.LEFT, 6, 2)).apply {
+                add(JLabel("Group by:"))
+                add(groupByBox)
+                add(JLabel("  Metric:"))
+                add(metricBox)
+                add(Box.createHorizontalStrut(8))
+                add(JLabel("Include:"))
+                add(includeTests)
+                add(includeGenerated)
+                add(includeResources)
+                add(includeOther)
+            }, BorderLayout.CENTER)
+            add(refreshBtn, BorderLayout.EAST)
+        }
 
         val header = JPanel(BorderLayout())
         header.add(toolbar, BorderLayout.NORTH)
@@ -140,7 +144,6 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
         val footer = JPanel(BorderLayout()).apply {
             border = JBUI.Borders.emptyTop(4)
             add(kpis, BorderLayout.CENTER)
-            add(refreshBtn, BorderLayout.EAST)
             add(footerStatus, BorderLayout.SOUTH)
         }
 
