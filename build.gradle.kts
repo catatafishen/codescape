@@ -3,7 +3,7 @@ import java.util.zip.ZipInputStream
 
 plugins {
     id("org.jetbrains.kotlin.jvm") version "2.3.21"
-    id("org.jetbrains.intellij.platform") version "2.15.0"
+    id("org.jetbrains.intellij.platform") version "2.16.0"
     jacoco
 }
 
@@ -25,8 +25,8 @@ dependencies {
         pluginVerifier()
     }
     testImplementation(kotlin("stdlib"))
-    testImplementation("org.junit.jupiter:junit-jupiter:6.0.3")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher:6.0.3")
+    testImplementation("org.junit.jupiter:junit-jupiter:6.1.0")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher:6.1.0")
 }
 
 kotlin {
