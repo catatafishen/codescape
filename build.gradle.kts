@@ -37,7 +37,7 @@ intellijPlatform {
     pluginConfiguration {
         ideaVersion {
             sinceBuild = "242"
-            untilBuild = "261.*"
+            untilBuild = "999.*"
         }
         // Allow CI to inject release notes (HTML) into the plugin's <change-notes>.
         System.getenv("CHANGELOG_FILE")?.takeIf { it.isNotBlank() }?.let { path ->
@@ -187,10 +187,10 @@ fun detectPluginInstallDir(): File {
 
     error(
         "Cannot find plugin install directory. Checked:\n" +
-        "  • ~/.local/share/JetBrains/IntelliJIdea*/{${pluginDirNames.joinToString(", ")}}\n" +
-        "  • ~/.local/share/JetBrains/Toolbox/apps/*/plugins/{${pluginDirNames.joinToString(", ")}}\n" +
-        "  • ~/.config/JetBrains/IntelliJIdea*/plugins/{${pluginDirNames.joinToString(", ")}}\n" +
-        "Make sure IntelliJ is running and the plugin is installed."
+                "  • ~/.local/share/JetBrains/IntelliJIdea*/{${pluginDirNames.joinToString(", ")}}\n" +
+                "  • ~/.local/share/JetBrains/Toolbox/apps/*/plugins/{${pluginDirNames.joinToString(", ")}}\n" +
+                "  • ~/.config/JetBrains/IntelliJIdea*/plugins/{${pluginDirNames.joinToString(", ")}}\n" +
+                "Make sure IntelliJ is running and the plugin is installed."
     )
 }
 
