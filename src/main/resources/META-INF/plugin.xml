@@ -22,8 +22,8 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow id="CodeScape"
-                     anchor="right"
-                     icon="/icons/projectStatsToolWindow.svg"
-                     factoryClass="com.github.projectstats.ProjectStatsToolWindowFactory"/>
+                    anchor="right"
+                    icon="/icons/projectStatsToolWindow.svg"
+                    factoryClass="com.github.projectstats.ProjectStatsToolWindowFactory"/>
     </extensions>
 </idea-plugin>
