@@ -37,7 +37,7 @@ intellijPlatform {
     pluginConfiguration {
         ideaVersion {
             sinceBuild = "242"
-            untilBuild = "999.*"
+            untilBuild = provider { null }
         }
         // Allow CI to inject release notes (HTML) into the plugin's <change-notes>.
         System.getenv("CHANGELOG_FILE")?.takeIf { it.isNotBlank() }?.let { path ->
