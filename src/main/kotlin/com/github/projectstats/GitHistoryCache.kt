@@ -20,7 +20,8 @@ object GitHistoryCache {
         dir.mkdirs()
         val digest = MessageDigest.getInstance("SHA-256").digest(repoRoot.toByteArray(Charsets.UTF_8))
         val hex = digest.joinToString("") { "%02x".format(it) }
-        return File(dir, "$hex.cache")
+        // v2: history is now parsed with --no-renames; v1 caches hold rename-corrupted deltas.
+        return File(dir, "$hex.v2.cache")
     }
 
     fun load(repoRoot: String): List<HistoryCommit>? {
