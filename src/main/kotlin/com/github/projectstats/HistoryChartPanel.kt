@@ -7,6 +7,8 @@ import com.intellij.util.ui.JBUI
 import java.awt.*
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
+import java.awt.event.MouseMotionAdapter
+import java.awt.geom.Ellipse2D
 import java.awt.geom.Line2D
 import java.awt.geom.Path2D
 import java.time.Instant
@@ -18,17 +20,38 @@ import javax.swing.JPanel
 import kotlin.math.max
 import kotlin.math.min
 
+/** How commits are spaced along the X axis. */
+enum class HistoryXScale(val display: String) {
+    INDEX("Even spacing"),
+    TIME("By date"),
+    ;
+
+    override fun toString() = display
+}
+
 /**
  * Hand-painted stacked-area chart of cumulative project size over mainline commit history,
  * with drill-down into directories (mirrors [TreemapPanel]'s drill API so [ProjectStatsPanel]
  * can drive either component through the same breadcrumb row).
+ *
+ * Single-click on a band drills into it, collapsing through any chain of directories that have
+ * only one child (same convention as [TreemapPanel]). Right-click pops one level. Hovering a
+ * commit node shows a detailed per-commit tooltip; clicking it opens the commit in the IDE's Git
+ * log tool window via [onOpenCommit]. Hovering elsewhere on a band shows a simpler
+ * name/value-at-nearest-commit tooltip.
  */
 class HistoryChartPanel : JPanel(BorderLayout()) {
 
+    private data class HistoryDrillStep(val chain: List<String>) {
+        fun display(): String = chain.joinToString("/")
+    }
+
     private var data: HistoryData = HistoryData(emptyList())
     private var series: HistorySeriesSet = HistorySeriesSet(emptyList(), LongArray(0), emptyList())
-    private val path = ArrayList<String>()
+    private val drillStack = ArrayDeque<HistoryDrillStep>()
     private var onDrillChanged: ((List<String>) -> Unit)? = null
+    private var onOpenCommit: ((HistoryCommit) -> Unit)? = null
+    private var xScale: HistoryXScale = HistoryXScale.INDEX
 
     private val canvas = ChartCanvas()
     private val legend = JPanel().apply {
@@ -56,38 +79,60 @@ class HistoryChartPanel : JPanel(BorderLayout()) {
         onDrillChanged = listener
     }
 
-    fun drillDepth(): Int = path.size
+    /** Invoked when the user clicks a commit node marker. */
+    fun setOnOpenCommit(listener: (HistoryCommit) -> Unit) {
+        onOpenCommit = listener
+    }
 
-    fun drillStepDisplay(index: Int): String = path[index]
+    fun setXScale(scale: HistoryXScale) {
+        if (xScale == scale) return
+        xScale = scale
+        canvas.repaint()
+    }
+
+    private fun flatPath(): List<String> = drillStack.flatMap { it.chain }
+
+    fun drillDepth(): Int = drillStack.size
+
+    fun drillStepDisplay(index: Int): String = drillStack.elementAt(index).display()
 
     /** Mirrors [TreemapPanel.drillPathKeys] shape so callers can treat both components uniformly. */
-    fun drillPathKeys(): List<List<String>> = path.map { listOf(it) }
-
-    fun currentPath(): List<String> = path.toList()
+    fun drillPathKeys(): List<List<String>> = drillStack.map { it.chain }
 
     fun popToDepth(keep: Int) {
-        if (keep < 0 || keep >= path.size) return
-        while (path.size > keep) path.removeAt(path.size - 1)
+        if (keep < 0 || keep >= drillStack.size) return
+        while (drillStack.size > keep) drillStack.removeLast()
         recompute()
-        onDrillChanged?.invoke(path.toList())
+        onDrillChanged?.invoke(flatPath())
     }
 
     fun popDrill(): Boolean {
-        if (path.isEmpty()) return false
-        path.removeAt(path.size - 1)
+        if (drillStack.isEmpty()) return false
+        drillStack.removeLast()
         recompute()
-        onDrillChanged?.invoke(path.toList())
+        onDrillChanged?.invoke(flatPath())
         return true
     }
 
+    /** Drills into [name], collapsing through any chain of single-child directories (mirrors [TreemapPanel]). */
     private fun drillInto(name: String) {
-        path.add(name)
+        val chain = ArrayList<String>()
+        chain.add(name)
+        var currentPath = flatPath() + name
+        var currentSeries = HistoryAggregator.seriesFor(data, currentPath)
+        while (currentSeries.children.size == 1 && currentSeries.children[0].hasChildren) {
+            val childName = currentSeries.children[0].name
+            chain.add(childName)
+            currentPath = currentPath + childName
+            currentSeries = HistoryAggregator.seriesFor(data, currentPath)
+        }
+        drillStack.addLast(HistoryDrillStep(chain))
         recompute()
-        onDrillChanged?.invoke(path.toList())
+        onDrillChanged?.invoke(flatPath())
     }
 
     private fun recompute() {
-        series = HistoryAggregator.seriesFor(data, path)
+        series = HistoryAggregator.seriesFor(data, flatPath())
         rebuildLegend()
         canvas.repaint()
     }
@@ -106,7 +151,7 @@ class HistoryChartPanel : JPanel(BorderLayout()) {
             val row = JPanel(FlowLayout(FlowLayout.LEFT, 4, 1)).apply {
                 add(swatch)
                 add(label)
-                toolTipText = if (child.hasChildren) "Double-click to drill into ${child.name}" else child.name
+                toolTipText = if (child.hasChildren) "Click to drill into ${child.name}" else child.name
                 if (child.hasChildren) cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
                 addMouseListener(object : MouseAdapter() {
                     override fun mouseClicked(e: MouseEvent) {
@@ -122,10 +167,13 @@ class HistoryChartPanel : JPanel(BorderLayout()) {
 
     private inner class ChartCanvas : JPanel() {
         private var bands: List<Triple<Path2D.Double, ChildSeries, Int>> = emptyList()
+        private var nodeX: DoubleArray = DoubleArray(0)
+        private var nodeY: DoubleArray = DoubleArray(0)
         private val marginLeft = 60
         private val marginRight = 12
         private val marginTop = 10
         private val marginBottom = 10
+        private val nodeHitRadius = 6.0
         private val dateFmt = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 
         init {
@@ -133,10 +181,24 @@ class HistoryChartPanel : JPanel(BorderLayout()) {
             toolTipText = ""
             addMouseListener(object : MouseAdapter() {
                 override fun mouseClicked(e: MouseEvent) {
-                    if (e.clickCount == 2 && e.button == MouseEvent.BUTTON1) {
+                    if (e.button == MouseEvent.BUTTON1 && e.clickCount == 1) {
+                        val nodeIdx = hitNode(e.x, e.y)
+                        if (nodeIdx != null) {
+                            onOpenCommit?.invoke(series.commits[nodeIdx])
+                            return
+                        }
                         hitBand(e.x, e.y)?.let { if (it.hasChildren) drillInto(it.name) }
                     } else if (e.button == MouseEvent.BUTTON3) {
                         popDrill()
+                    }
+                }
+            })
+            addMouseMotionListener(object : MouseMotionAdapter() {
+                override fun mouseMoved(e: MouseEvent) {
+                    cursor = if (hitNode(e.x, e.y) != null) {
+                        Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+                    } else {
+                        Cursor.getDefaultCursor()
                     }
                 }
             })
@@ -145,18 +207,54 @@ class HistoryChartPanel : JPanel(BorderLayout()) {
         private fun hitBand(x: Int, y: Int): ChildSeries? =
             bands.lastOrNull { (shape, _, _) -> shape.contains(x.toDouble(), y.toDouble()) }?.second
 
+        /** Index of the commit node under (or within [nodeHitRadius] of) the given point, if any. */
+        private fun hitNode(x: Int, y: Int): Int? {
+            var best: Int? = null
+            var bestDist = nodeHitRadius
+            for (i in nodeX.indices) {
+                val dx = nodeX[i] - x
+                val dy = nodeY[i] - y
+                val dist = Math.hypot(dx, dy)
+                if (dist <= bestDist) {
+                    bestDist = dist
+                    best = i
+                }
+            }
+            return best
+        }
+
         private fun nearestIndex(mouseX: Int): Int {
-            val n = series.commits.size
+            val n = nodeX.size
             if (n == 0) return -1
-            val plotW = (width - marginLeft - marginRight).coerceAtLeast(1)
-            val frac = ((mouseX - marginLeft).toDouble() / plotW).coerceIn(0.0, 1.0)
-            return (frac * (n - 1)).toInt().coerceIn(0, n - 1)
+            var best = 0
+            var bestDist = Double.MAX_VALUE
+            for (i in 0 until n) {
+                val dist = Math.abs(nodeX[i] - mouseX)
+                if (dist < bestDist) {
+                    bestDist = dist
+                    best = i
+                }
+            }
+            return best
         }
 
         override fun getToolTipText(event: MouseEvent): String? {
             val n = series.commits.size
             if (n == 0) return null
+            val nodeIdx = hitNode(event.x, event.y)
+            if (nodeIdx != null) return commitTooltip(nodeIdx)
+
             val i = nearestIndex(event.x)
+            if (i < 0) return null
+            val band = hitBand(event.x, event.y)
+            return if (band != null) {
+                "<html><b>${band.name}</b><br>${compactCount(band.values[i])}</html>"
+            } else {
+                "<html>Total: ${compactCount(series.total[i])}</html>"
+            }
+        }
+
+        private fun commitTooltip(i: Int): String {
             val commit = series.commits[i]
             val date = Instant.ofEpochSecond(commit.epochSeconds).atZone(ZoneId.systemDefault()).format(dateFmt)
             val sb = StringBuilder("<html><b>$date</b> (${commit.sha.take(7)})<br>")
@@ -165,6 +263,7 @@ class HistoryChartPanel : JPanel(BorderLayout()) {
                 sb.append("${child.name}: ${compactCount(child.values[i])}<br>")
             }
             if (series.children.size > 8) sb.append("&hellip; ${series.children.size - 8} more")
+            sb.append("<br><i>Click to open in Git log</i>")
             sb.append("</html>")
             return sb.toString()
         }
@@ -177,6 +276,8 @@ class HistoryChartPanel : JPanel(BorderLayout()) {
             val n = series.commits.size
             if (n == 0) {
                 bands = emptyList()
+                nodeX = DoubleArray(0)
+                nodeY = DoubleArray(0)
                 g2.color = JBColor.GRAY
                 g2.drawString("No history scanned yet", marginLeft, height / 2)
                 return
@@ -193,7 +294,15 @@ class HistoryChartPanel : JPanel(BorderLayout()) {
             val minVal = min(0L, series.total.minOrNull() ?: 0L)
             val range = (maxVal - minVal).coerceAtLeast(1L)
 
-            fun xAt(i: Int): Double = plotLeft + plotW * (if (n <= 1) 0.0 else i.toDouble() / (n - 1))
+            val minT = series.commits.first().epochSeconds
+            val maxT = series.commits.last().epochSeconds
+            val tRange = (maxT - minT).coerceAtLeast(1L)
+
+            fun xAt(i: Int): Double = when (xScale) {
+                HistoryXScale.INDEX -> plotLeft + plotW * (if (n <= 1) 0.0 else i.toDouble() / (n - 1))
+                HistoryXScale.TIME -> plotLeft + plotW * (series.commits[i].epochSeconds - minT).toDouble() / tRange
+            }
+
             fun yAt(v: Long): Double = plotBottom - plotH * ((v - minVal).toDouble() / range)
 
             // Gridlines + Y-axis labels at 0%, 50%, 100% of the value range.
@@ -236,13 +345,26 @@ class HistoryChartPanel : JPanel(BorderLayout()) {
             g2.color = JBColor.foreground()
             g2.stroke = BasicStroke(1.8f)
             val totalPath = Path2D.Double()
+            val xs = DoubleArray(n)
+            val ys = DoubleArray(n)
             for (i in 0 until n) {
                 val x = xAt(i)
                 val y = yAt(series.total[i])
+                xs[i] = x
+                ys[i] = y
                 if (i == 0) totalPath.moveTo(x, y) else totalPath.lineTo(x, y)
             }
             g2.draw(totalPath)
             g2.stroke = BasicStroke(1f)
+            nodeX = xs
+            nodeY = ys
+
+            // Commit node markers on the total line.
+            g2.color = JBColor.foreground()
+            for (i in 0 until n) {
+                val marker = Ellipse2D.Double(xs[i] - 2.5, ys[i] - 2.5, 5.0, 5.0)
+                g2.fill(marker)
+            }
 
             // Date range footer.
             g2.color = JBColor.GRAY

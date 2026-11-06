@@ -89,6 +89,9 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
         preferredSize = Dimension(140, preferredSize.height)
     }
     private val historyStopButton = JButton("Stop").apply { isEnabled = false }
+    private val historyScaleBox = ComboBox(HistoryXScale.entries.toTypedArray()).apply {
+        selectedItem = HistoryXScale.INDEX
+    }
     private val mainViewHost = JPanel(CardLayout())
 
     private var scanResult: ScanResult? = null
@@ -161,6 +164,9 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
             add(historyStatusLabel)
             add(historyProgressBar)
             add(historyStopButton)
+            add(Box.createHorizontalStrut(8))
+            add(JLabel("X axis:"))
+            add(historyScaleBox)
         }
         val historyPanel = JPanel(BorderLayout()).apply {
             add(historyToolbar, BorderLayout.NORTH)
@@ -180,6 +186,9 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
         includeResources.addActionListener { refreshViews() }
         includeOther.addActionListener { refreshViews() }
         historyStopButton.addActionListener { historyStopRequested.set(true) }
+        historyScaleBox.addActionListener {
+            (historyScaleBox.selectedItem as? HistoryXScale)?.let { historyChart.setXScale(it) }
+        }
 
         showCard(treemapCard, CARD_EMPTY)
         showCard(tableCard, CARD_EMPTY)
@@ -189,6 +198,9 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
         historyChart.setOnDrillChanged {
             updateBreadcrumbs()
             selectInProjectView()
+        }
+        historyChart.setOnOpenCommit { commit ->
+            GitCommitNavigator.openCommit(project, commit.repoRoot, commit.sha)
         }
     }
 

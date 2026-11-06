@@ -11,6 +11,8 @@ data class HistoryCommit(
     val sha: String,
     val epochSeconds: Long,
     val fileDeltas: Map<String, Long>,
+    /** Absolute path of the git root this commit was read from (used to open it in the Git log tool window). */
+    val repoRoot: String = "",
 ) : Serializable
 
 /** Merged, chronologically-sorted mainline commit history across all discovered git roots. */

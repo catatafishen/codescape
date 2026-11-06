@@ -166,7 +166,7 @@ object GitHistoryCalculator {
 
                 fun flush() {
                     val s = sha ?: return
-                    accum += HistoryCommit(s, epoch, deltas?.toMap() ?: emptyMap())
+                    accum += HistoryCommit(s, epoch, deltas?.toMap() ?: emptyMap(), repoRoot)
                     sha = null
                     deltas = null
                     if (++sinceLastBatch >= BATCH_SIZE) {

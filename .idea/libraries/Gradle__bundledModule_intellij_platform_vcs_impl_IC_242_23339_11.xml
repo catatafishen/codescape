@@ -1,0 +1,10 @@
+<component name="libraryTable">
+  <library name="Gradle: bundledModule:intellij.platform.vcs.impl:IC-242.23339.11" type="java-imported" external-system-id="GRADLE">
+    <properties groupId="bundledModule" artifactId="intellij.platform.vcs.impl" version="IC-242.23339.11" baseVersion="IC-242.23339.11" />
+    <CLASSES>
+      <root url="jar://$USER_HOME$/.gradle/caches/9.4.1/transforms/cb605f998b35afd56c0729f1409877a6/transformed/ideaIC-2024.2.3/lib/modules/intellij.platform.vcs.impl.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
