@@ -17,6 +17,7 @@ import java.time.format.DateTimeFormatter
 import javax.swing.BorderFactory
 import javax.swing.BoxLayout
 import javax.swing.JPanel
+import javax.swing.Scrollable
 import kotlin.math.max
 import kotlin.math.min
 
@@ -54,6 +55,11 @@ class HistoryChartPanel : JPanel(BorderLayout()) {
     private var xScale: HistoryXScale = HistoryXScale.INDEX
 
     private val canvas = ChartCanvas()
+    private var zoom = 1.0
+    private val canvasScroll = JBScrollPane(canvas).apply {
+        border = BorderFactory.createEmptyBorder()
+        verticalScrollBarPolicy = JBScrollPane.VERTICAL_SCROLLBAR_NEVER
+    }
     private val legend = JPanel().apply {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
         border = JBUI.Borders.empty(4)
@@ -65,7 +71,7 @@ class HistoryChartPanel : JPanel(BorderLayout()) {
     }
 
     init {
-        add(canvas, BorderLayout.CENTER)
+        add(canvasScroll, BorderLayout.CENTER)
         add(legendScroll, BorderLayout.EAST)
     }
 
@@ -165,7 +171,31 @@ class HistoryChartPanel : JPanel(BorderLayout()) {
         legend.repaint()
     }
 
-    private inner class ChartCanvas : JPanel() {
+    /** Zooms the X axis by [factor], keeping the content under [mouseX] (canvas coords) stationary. */
+    private fun zoomBy(factor: Double, mouseX: Int) {
+        val viewport = canvasScroll.viewport
+        val oldW = canvas.width.coerceAtLeast(1)
+        val newZoom = (zoom * factor).coerceIn(1.0, 200.0)
+        if (newZoom == zoom) return
+        zoom = newZoom
+        val newW = (viewport.width * zoom).toInt().coerceAtLeast(viewport.width)
+        val offsetInView = mouseX - viewport.viewPosition.x
+        val newMouseX = (mouseX.toDouble() / oldW * newW).toInt()
+        canvas.preferredSize = Dimension(newW, viewport.height)
+        canvas.setSize(newW, viewport.height)
+        canvas.revalidate()
+        viewport.viewPosition =
+            Point((newMouseX - offsetInView).coerceIn(0, (newW - viewport.width).coerceAtLeast(0)), 0)
+        canvas.repaint()
+    }
+
+    private inner class ChartCanvas : JPanel(), Scrollable {
+        override fun getPreferredScrollableViewportSize(): Dimension = preferredSize
+        override fun getScrollableUnitIncrement(r: Rectangle, o: Int, d: Int) = 20
+        override fun getScrollableBlockIncrement(r: Rectangle, o: Int, d: Int) = max(20, r.width - 40)
+        override fun getScrollableTracksViewportWidth() = zoom <= 1.0
+        override fun getScrollableTracksViewportHeight() = true
+
         private var bands: List<Triple<Path2D.Double, ChildSeries, Int>> = emptyList()
         private var nodeX: DoubleArray = DoubleArray(0)
         private var nodeY: DoubleArray = DoubleArray(0)
@@ -179,6 +209,10 @@ class HistoryChartPanel : JPanel(BorderLayout()) {
         init {
             background = JBColor.background()
             toolTipText = ""
+            addMouseWheelListener { e ->
+                val factor = Math.pow(1.25, -e.preciseWheelRotation)
+                zoomBy(factor, e.x)
+            }
             addMouseListener(object : MouseAdapter() {
                 override fun mouseClicked(e: MouseEvent) {
                     if (e.button == MouseEvent.BUTTON1 && e.clickCount == 1) {
