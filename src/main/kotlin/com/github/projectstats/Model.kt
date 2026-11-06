@@ -87,7 +87,8 @@ enum class GroupBy(val display: String) {
     LANGUAGE("Language"),
     MODULE("Module"),
     CATEGORY("Source category"),
-    DIRECTORY("Directory tree");
+    DIRECTORY("Directory tree"),
+    HISTORY("Size over time");
 
     override fun toString() = display
 }

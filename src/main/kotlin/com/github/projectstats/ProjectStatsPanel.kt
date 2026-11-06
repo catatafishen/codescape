@@ -20,6 +20,7 @@ import com.intellij.ui.table.JBTable
 import com.intellij.util.ui.JBUI
 import java.awt.*
 import java.util.*
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.*
 import javax.swing.event.ChangeEvent
 import javax.swing.table.AbstractTableModel
@@ -42,7 +43,9 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
         background = JBColor.background()
         isOpaque = true
         onSelect { crumb, _ ->
-            crumbTargets[crumb]?.let { treemap.popToDepth(it) }
+            val target = crumbTargets[crumb] ?: return@onSelect
+            if ((groupByBox.selectedItem as? GroupBy) == GroupBy.HISTORY) historyChart.popToDepth(target)
+            else treemap.popToDepth(target)
         }
     }
     private val breadcrumbRow = JPanel(BorderLayout()).apply {
@@ -74,6 +77,20 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val treemapCard = JPanel(CardLayout())
     private val tableCard = JPanel(CardLayout())
 
+    private val historyChart = HistoryChartPanel()
+    private var historyData: HistoryData = HistoryData(emptyList())
+    private val historyStopRequested = AtomicBoolean(false)
+    private var historyScanning = false
+    private var historyScanStarted = false
+    private val historyStatusLabel = JBLabel(" ")
+    private val historyProgressBar = JProgressBar().apply {
+        isIndeterminate = true
+        isVisible = false
+        preferredSize = Dimension(140, preferredSize.height)
+    }
+    private val historyStopButton = JButton("Stop").apply { isEnabled = false }
+    private val mainViewHost = JPanel(CardLayout())
+
     private var scanResult: ScanResult? = null
     private var rootGroups: List<StatGroup> = emptyList()
     private var currentColorFn: (StatGroup) -> Color = { JBColor.GRAY }
@@ -86,6 +103,8 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
     companion object {
         private const val CARD_EMPTY = "empty"
         private const val CARD_DATA = "data"
+        private const val CARD_MAIN_DATA = "main"
+        private const val CARD_MAIN_HISTORY = "history"
     }
 
     init {
@@ -138,8 +157,21 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
             secondComponent = tableCard
         }
 
+        val historyToolbar = JPanel(FlowLayout(FlowLayout.LEFT, 6, 2)).apply {
+            add(historyStatusLabel)
+            add(historyProgressBar)
+            add(historyStopButton)
+        }
+        val historyPanel = JPanel(BorderLayout()).apply {
+            add(historyToolbar, BorderLayout.NORTH)
+            add(historyChart, BorderLayout.CENTER)
+        }
+
+        mainViewHost.add(split, CARD_MAIN_DATA)
+        mainViewHost.add(historyPanel, CARD_MAIN_HISTORY)
+
         add(header, BorderLayout.NORTH)
-        add(split, BorderLayout.CENTER)
+        add(mainViewHost, BorderLayout.CENTER)
 
         groupByBox.addActionListener { refreshViews() }
         metricBox.addActionListener { refreshViews() }
@@ -147,11 +179,17 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
         includeGenerated.addActionListener { refreshViews() }
         includeResources.addActionListener { refreshViews() }
         includeOther.addActionListener { refreshViews() }
+        historyStopButton.addActionListener { historyStopRequested.set(true) }
 
         showCard(treemapCard, CARD_EMPTY)
         showCard(tableCard, CARD_EMPTY)
+        showCard(mainViewHost, CARD_MAIN_DATA)
 
         treemap.setOnDrillChanged { applyDrill(it) }
+        historyChart.setOnDrillChanged {
+            updateBreadcrumbs()
+            selectInProjectView()
+        }
     }
 
     private fun createEmptyPanel(): JPanel {
@@ -265,6 +303,20 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     private fun refreshViews() {
+        val groupByEarly = groupByBox.selectedItem as? GroupBy
+        val isHistory = groupByEarly == GroupBy.HISTORY
+        metricBox.isEnabled = !isHistory
+        includeTests.isEnabled = !isHistory
+        includeGenerated.isEnabled = !isHistory
+        includeResources.isEnabled = !isHistory
+        includeOther.isEnabled = !isHistory
+        if (isHistory) {
+            showCard(mainViewHost, CARD_MAIN_HISTORY)
+            updateBreadcrumbs()
+            if (!historyScanStarted) runHistoryScan()
+            return
+        }
+        showCard(mainViewHost, CARD_MAIN_DATA)
         val result = scanResult ?: run {
             rootGroups = emptyList()
             currentColorFn = { JBColor.GRAY }
@@ -328,9 +380,13 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     private fun selectInProjectView() {
-        if ((groupByBox.selectedItem as? GroupBy) != GroupBy.DIRECTORY) return
+        val groupBy = groupByBox.selectedItem as? GroupBy
+        val segments = when (groupBy) {
+            GroupBy.DIRECTORY -> treemap.drillPathKeys().flatten()
+            GroupBy.HISTORY -> historyChart.drillPathKeys().flatten()
+            else -> return
+        }
         val base = project.guessProjectDir() ?: return
-        val segments = treemap.drillPathKeys().flatten()
         var target: VirtualFile? = base
         for (segment in segments) {
             target = target?.findChild(segment)
@@ -341,12 +397,15 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
 
     private fun updateBreadcrumbs() {
         breadcrumbRow.isVisible = false
-        val isDir = (groupByBox.selectedItem as? GroupBy) == GroupBy.DIRECTORY
-        if (!isDir) return
+        val groupBy = groupByBox.selectedItem as? GroupBy
+        val isDir = groupBy == GroupBy.DIRECTORY
+        val isHistory = groupBy == GroupBy.HISTORY
+        if (!isDir && !isHistory) return
         breadcrumbRow.isVisible = true
 
         crumbTargets.clear()
-        val crumbs = ArrayList<Crumb>(treemap.drillDepth() + 1)
+        val depth = if (isHistory) historyChart.drillDepth() else treemap.drillDepth()
+        val crumbs = ArrayList<Crumb>(depth + 1)
 
         // Root crumb
         val root = object : Crumb {
@@ -357,10 +416,10 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
         crumbs.add(root)
 
         // Drill step crumbs
-        val depth = treemap.drillDepth()
         for (i in 0 until depth) {
+            val display = if (isHistory) historyChart.drillStepDisplay(i) else treemap.drillStepDisplay(i)
             val crumb = object : Crumb {
-                override fun getText() = treemap.drillStepDisplay(i)
+                override fun getText() = display
                 override fun getIcon() = null
             }
             crumbTargets[crumb] = i + 1
@@ -368,6 +427,48 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
         }
 
         breadcrumbs.setCrumbs(crumbs)
+    }
+
+    private fun runHistoryScan() {
+        if (historyScanning) return
+        historyScanStarted = true
+        historyScanning = true
+        historyStopRequested.set(false)
+        historyStopButton.isEnabled = true
+        historyProgressBar.isVisible = true
+        historyStatusLabel.text = "Scanning commit history…"
+        object : Task.Backgroundable(project, "Scanning git history for size over time", true) {
+            override fun run(indicator: ProgressIndicator) {
+                indicator.isIndeterminate = true
+                GitHistoryCalculator.compute(project, indicator, historyStopRequested) { commits ->
+                    ApplicationManager.getApplication().invokeLater {
+                        historyData = HistoryData(commits)
+                        historyChart.setData(historyData)
+                        historyStatusLabel.text = "Scanned ${commits.size} commits…"
+                    }
+                }
+            }
+
+            override fun onSuccess() {
+                finishHistoryScan("Scanned ${historyData.commits.size} commits")
+            }
+
+            override fun onCancel() {
+                finishHistoryScan("Stopped after ${historyData.commits.size} commits")
+            }
+
+            override fun onThrowable(error: Throwable) {
+                finishHistoryScan("History scan failed: ${error.message}")
+            }
+        }.queue()
+    }
+
+    private fun finishHistoryScan(status: String) {
+        historyScanning = false
+        historyStopRequested.set(false)
+        historyStopButton.isEnabled = false
+        historyProgressBar.isVisible = false
+        historyStatusLabel.text = status
     }
 
     fun showCoverageReportsDialog() {
