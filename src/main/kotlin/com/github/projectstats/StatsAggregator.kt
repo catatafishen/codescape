@@ -16,6 +16,7 @@ object StatsAggregator {
             GroupBy.MODULE -> flatGroup(filtered) { it.module }
             GroupBy.CATEGORY -> flatGroup(filtered) { it.category.display }
             GroupBy.DIRECTORY -> directoryTree(filtered)
+            GroupBy.HISTORY -> emptyList() // HISTORY has its own chart/pipeline; never aggregated here.
         }
     }
 
@@ -60,8 +61,10 @@ object StatsAggregator {
             acc.coverable += f.coverableLines
         }
         return byKey.entries.map { (k, v) ->
-            StatGroup(k, v.total, v.nonBlank, v.code, v.complexity, v.size, v.count, v.commits,
-                emptyList(), v.covered, v.coverable)
+            StatGroup(
+                k, v.total, v.nonBlank, v.code, v.complexity, v.size, v.count, v.commits,
+                emptyList(), v.covered, v.coverable
+            )
         }.sortedByDescending { it.totalLines }
     }
 
@@ -112,8 +115,10 @@ object StatsAggregator {
 
         fun convert(n: Node): StatGroup {
             val kids = n.children.values.map { convert(it) }.sortedByDescending { it.totalLines }
-            return StatGroup(n.name, n.total, n.nonBlank, n.code, n.complexity, n.size, n.count, n.commits,
-                kids, n.covered, n.coverable)
+            return StatGroup(
+                n.name, n.total, n.nonBlank, n.code, n.complexity, n.size, n.count, n.commits,
+                kids, n.covered, n.coverable
+            )
         }
         // Return the top-level children (under <project>); treemap presents them as roots.
         return convert(root).children
