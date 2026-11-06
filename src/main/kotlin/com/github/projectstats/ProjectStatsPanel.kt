@@ -1,11 +1,14 @@
 package com.github.projectstats
 
+import com.intellij.ide.projectView.ProjectView
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.guessProjectDir
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogWrapper
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.JBColor
 import com.intellij.ui.OnePixelSplitter
 import com.intellij.ui.components.JBCheckBox
@@ -25,7 +28,7 @@ import javax.swing.table.TableRowSorter
 
 class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
 
-    private val groupByBox = ComboBox(GroupBy.entries.toTypedArray()).apply { selectedItem = GroupBy.LANGUAGE }
+    private val groupByBox = ComboBox(GroupBy.entries.toTypedArray()).apply { selectedItem = GroupBy.DIRECTORY }
     private val metricBox = ComboBox(Metric.entries.toTypedArray()).apply { selectedItem = Metric.LOC }
     private val includeTests = JBCheckBox("Tests", true)
     private val includeGenerated = JBCheckBox("Generated", false)
@@ -321,6 +324,19 @@ class ProjectStatsPanel(private val project: Project) : JPanel(BorderLayout()) {
         val scope = drilled ?: result.asStatGroup("Total")
         totalsModel.update(drilled?.key ?: "Total", scope)
         updateBreadcrumbs()
+        selectInProjectView()
+    }
+
+    private fun selectInProjectView() {
+        if ((groupByBox.selectedItem as? GroupBy) != GroupBy.DIRECTORY) return
+        val base = project.guessProjectDir() ?: return
+        val segments = treemap.drillPathKeys().flatten()
+        var target: VirtualFile? = base
+        for (segment in segments) {
+            target = target?.findChild(segment)
+        }
+        val resolved = target?.takeIf { it.isValid } ?: return
+        ProjectView.getInstance(project).select(null, resolved, false)
     }
 
     private fun updateBreadcrumbs() {
