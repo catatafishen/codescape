@@ -22,6 +22,7 @@ dependencies {
     intellijPlatform {
         intellijIdeaCommunity("2024.2.3")
         bundledPlugin("com.intellij.java")
+        bundledPlugin("Git4Idea")
         pluginVerifier()
     }
     testImplementation(kotlin("stdlib"))
