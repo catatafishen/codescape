@@ -16,9 +16,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  * git root and reconstructing per-commit net line deltas (added - deleted per touched file).
  *
  * `--first-parent` follows only the mainline (skips side-branch commits merged in), so a merge
- * doesn't double-count lines that already landed via the branch being merged. Combined with no
- * rename detection (`-M`), this is a simplification: renamed files show as a delete + an add
- * (a brief dip and recovery) rather than a clean move. Accepted trade-off for speed and simplicity.
+ * doesn't double-count lines that already landed via the branch being merged. Rename detection is
+ * explicitly disabled (`--no-renames`, since git log enables it by default): a move is recorded
+ * as a delete + an add, so the old directory shrinks and the new one grows. With detection on,
+ * pure renames have a net of 0 and would leave the old directory's size stuck forever.
  *
  * Results are cached on disk (see [GitHistoryCache]) so repeat invocations only read commits
  * newer than the last cached one. If the cached commit is no longer reachable from HEAD (history
@@ -134,6 +135,7 @@ object GitHistoryCalculator {
             "--first-parent",
             "--reverse",
             "--numstat",
+            "--no-renames",
             "--pretty=format:$HEADER_MARKER%H %ct",
             range,
         )
